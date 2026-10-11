@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/causal-core",
+]
+resolver = "2"

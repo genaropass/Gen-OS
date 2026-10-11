@@ -1,0 +1,11 @@
+[package]
+name = "causal-core"
+version = "0.1.0"
+edition = "2021"
+description = "Motor del Grafo Causal y Multiverso con Escrow para AgentOS"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
