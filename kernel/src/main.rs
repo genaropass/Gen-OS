@@ -6,6 +6,8 @@ pub mod limine;
 pub mod serial;
 pub mod panic;
 pub mod qemu_exit;
+pub mod gdt;
+pub mod idt;
 
 use limine::{LimineBaseRevision, LimineHhdmRequest};
 use serial::SERIAL1;
@@ -34,7 +36,23 @@ pub extern "C" fn _start() -> ! {
     println!("  Arranque completado exitosamente via UEFI / Limine");
     println!("========================================================");
 
-    // 3. Comprobar si el bootloader soporta la revisión solicitada
+    // 3. Inicializar segmentación (GDT) y pila IST de contingencia (TSS)
+    println!("[AgentOS] Configurando GDT y TSS...");
+    gdt::init();
+    println!("[AgentOS] GDT y TSS cargadas con exito (IST[0] activo)");
+
+    // 4. Inicializar tabla de interrupciones (IDT)
+    println!("[AgentOS] Configurando IDT y vectores de excepcion...");
+    idt::init();
+    println!("[AgentOS] IDT cargada (trampolines activos para #DE, #BP, #UD, #DF, #GP, #PF)");
+
+    // Autotest de interrupción por software (Breakpoint #BP)
+    unsafe {
+        core::arch::asm!("int3", options(nomem, nostack));
+    }
+    println!("[AgentOS] Autotest IDT (#BP) superado exitosamente!");
+
+    // 5. Comprobar si el bootloader soporta la revisión solicitada
     if BASE_REVISION.is_supported() {
         println!("[AgentOS] Protocolo Limine: Revision base soportada OK");
     } else {
