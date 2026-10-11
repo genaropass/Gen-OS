@@ -11,6 +11,7 @@ pub mod qemu_exit;
 pub mod gdt;
 pub mod idt;
 pub mod mm;
+pub mod syscall;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -133,10 +134,29 @@ pub extern "C" fn _start() -> ! {
         token, child_token
     );
 
+    // 10. Autotest de Syscall ABI via software interrupt `int 0x80`
+    syscall::init();
+    let sys_ret: i64;
+    unsafe {
+        core::arch::asm!(
+            "int 0x80",
+            inout("rax") syscall::SYS_EFFECT_LOG => sys_ret,
+            in("rdi") 0u64, // branch 0
+            in("rsi") 2u64, // target domain 2 (network)
+            in("rdx") 1u64, // reversibility 1 (escrow staged)
+            in("r10") 0u64,
+            options(nostack)
+        );
+    }
+    println!(
+        "[AgentOS::Syscall] Autotest int 0x80 exitoso: SYS_EFFECT_LOG retorno effect_id={}",
+        sys_ret
+    );
+
     println!("========================================================");
     println!("  [AgentOS] Kernel Causal Inicializado al 100%");
     println!("  Sub-sistemas activos: UART, GDT, IDT, PMM, VMM, Heap,");
-    println!("                        CausalLedger, CSpace");
+    println!("                        CausalLedger, CSpace, Syscall (int 0x80)");
     println!("========================================================");
 
     // Para la prueba automatizada M1/M2 en QEMU, reportamos éxito a isa-debug-exit

@@ -75,7 +75,7 @@ pub struct InterruptStackFrame {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_interrupt_handler(frame: &InterruptStackFrame) {
+pub extern "C" fn rust_interrupt_handler(frame: &mut InterruptStackFrame) {
     match frame.vector {
         0 => {
             println!("\n[CPU EXCEPTION] Divide by Zero (#DE) en RIP: 0x{:016x}", frame.rip);
@@ -107,6 +107,16 @@ pub extern "C" fn rust_interrupt_handler(frame: &InterruptStackFrame) {
             println!("RIP causante: 0x{:016x}, Flags error: 0x{:x}", frame.rip, frame.error_code);
             crate::arch::hlt_loop();
         }
+        128 => {
+            let ret = crate::syscall::dispatch_syscall(
+                frame.rax,
+                frame.rdi,
+                frame.rsi,
+                frame.rdx,
+                frame.r10,
+            );
+            frame.rax = ret as u64;
+        }
         _ => {
             println!("[INTERRUPCION] Vector {} en RIP: 0x{:016x}", frame.vector, frame.rip);
         }
@@ -121,6 +131,7 @@ extern "C" {
     fn isr_8();
     fn isr_13();
     fn isr_14();
+    fn isr_128();
 }
 
 global_asm!(
@@ -192,6 +203,13 @@ global_asm!(
     isr_14:
         push 14
         jmp isr_common
+
+    /* Syscall software interrupt (vector 128 / 0x80) */
+    .global isr_128
+    isr_128:
+        push 0
+        push 128
+        jmp isr_common
     "#
 );
 
@@ -204,6 +222,7 @@ pub fn init() {
         IDT[8].set_handler(isr_8 as *const () as usize, 1);
         IDT[13].set_handler(isr_13 as *const () as usize, 0);
         IDT[14].set_handler(isr_14 as *const () as usize, 0);
+        IDT[128].set_handler(isr_128 as *const () as usize, 0);
 
         let descriptor = IdtDescriptor {
             limit: (size_of::<[IdtEntry; 256]>() - 1) as u16,
