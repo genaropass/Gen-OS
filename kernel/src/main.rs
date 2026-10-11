@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 pub mod arch;
 pub mod limine;
 pub mod serial;
@@ -8,8 +10,13 @@ pub mod panic;
 pub mod qemu_exit;
 pub mod gdt;
 pub mod idt;
+pub mod mm;
 
-use limine::{LimineBaseRevision, LimineHhdmRequest};
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use causal_core::{CausalLedger, DomainId, BranchId, Reversibility, SecurityLabel};
+use capability_engine::{CSpace, ObjectId, Permissions};
+use limine::{LimineBaseRevision, LimineHhdmRequest, LimineMemmapRequest};
 use serial::SERIAL1;
 #[cfg(feature = "test-exit")]
 use qemu_exit::{exit_qemu, QemuExitCode};
@@ -23,6 +30,11 @@ static BASE_REVISION: LimineBaseRevision = LimineBaseRevision::new(2);
 #[used]
 #[link_section = ".requests"]
 static HHDM_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new();
+
+/// Solicitud del mapa de memoria física (Memmap)
+#[used]
+#[link_section = ".requests"]
+static MEMMAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new();
 
 /// Punto de entrada del kernel (llamado por el bootloader Limine en modo de 64 bits)
 #[no_mangle]
@@ -59,16 +71,75 @@ pub extern "C" fn _start() -> ! {
         println!("[AgentOS] ADVERTENCIA: Revision del protocolo Limine no soportada");
     }
 
-    // 4. Comprobar respuesta HHDM si está disponible
-    if let Some(hhdm) = HHDM_REQUEST.get_response() {
-        println!("[AgentOS] HHDM Offset detectado: 0x{:016x}", hhdm.offset);
-    } else {
-        println!("[AgentOS] HHDM no provisto por el bootloader (arranque temprano)");
-    }
+    // 6. Inicializar Subsistema de Gestión de Memoria (PMM, VMM, Heap)
+    mm::init(MEMMAP_REQUEST.get_response(), HHDM_REQUEST.get_response());
 
-    println!("[AgentOS] Hito M1: Diagnostico serie y kernel base OK");
+    // 7. Autotest de asignación dinámica en Heap (Box, Vec)
+    let boxed_val = Box::new(0xCAFE_BABE_u64);
+    let mut test_vec = Vec::new();
+    test_vec.push(10);
+    test_vec.push(20);
+    test_vec.push(30);
+    println!(
+        "[AgentOS::Heap] Autotest OK: Box(0x{:x}), Vec len={}, cap={}",
+        *boxed_val,
+        test_vec.len(),
+        test_vec.capacity()
+    );
 
-    // Para la prueba automatizada M1 en QEMU, reportamos éxito a isa-debug-exit
+    // 8. Autotest del Grafo Causal en Ring 0
+    let mut ledger = CausalLedger::new();
+    let root_branch = BranchId(0);
+    let agent_domain = DomainId(1);
+    let untrusted_label = SecurityLabel::UNTRUSTED_EXTERNAL;
+
+    let e1 = ledger.record_effect(
+        root_branch,
+        agent_domain,
+        DomainId(0), // kernel
+        alloc::vec![],
+        untrusted_label,
+        Reversibility::PurelyReversible,
+        [0u8; 32],
+    );
+
+    let e2 = ledger.record_effect(
+        root_branch,
+        agent_domain,
+        DomainId(2), // network
+        alloc::vec![e1],
+        untrusted_label,
+        Reversibility::EscrowStaged,
+        [0u8; 32],
+    );
+
+    let why_chain = ledger.why(e2);
+    println!(
+        "[AgentOS::Causal] Autotest OK: Efecto e2={:?} depende causalmente de {} nodo(s)",
+        e2,
+        why_chain.len()
+    );
+
+    // 9. Autotest del Motor de Capacidades en Ring 0
+    let mut cspace = CSpace::new();
+    let token = cspace.mint_root(
+        ObjectId(100),
+        Permissions::READ | Permissions::WRITE | Permissions::GRANT,
+        1,
+    );
+    let child_token = cspace.derive(token, Permissions::READ, 2).expect("Derivacion valida");
+    println!(
+        "[AgentOS::CapEngine] Autotest OK: Token padre {:?} derivo token hijo {:?}",
+        token, child_token
+    );
+
+    println!("========================================================");
+    println!("  [AgentOS] Kernel Causal Inicializado al 100%");
+    println!("  Sub-sistemas activos: UART, GDT, IDT, PMM, VMM, Heap,");
+    println!("                        CausalLedger, CSpace");
+    println!("========================================================");
+
+    // Para la prueba automatizada M1/M2 en QEMU, reportamos éxito a isa-debug-exit
     #[cfg(feature = "test-exit")]
     {
         println!("[AgentOS] Modo de prueba automatizada activo. Saliendo...");

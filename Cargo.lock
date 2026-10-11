@@ -5,6 +5,10 @@ version = 4
 [[package]]
 name = "agentos-kernel"
 version = "0.1.0"
+dependencies = [
+ "capability-engine",
+ "causal-core",
+]
 
 [[package]]
 name = "capability-engine"

@@ -11,6 +11,8 @@ test = false
 bench = false
 
 [dependencies]
+causal-core = { path = "../crates/causal-core", default-features = false }
+capability-engine = { path = "../crates/capability-engine", default-features = false }
 
 [features]
 default = []
