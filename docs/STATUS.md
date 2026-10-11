@@ -1,29 +1,32 @@
 # Estado del proyecto AgentOS
 
 **Última actualización:** 2026-10-11
-**Fase actual:** Fase 0 — Investigación y especificación
+**Fase actual:** Fase 0 — Investigación, Especificación y Arquitectura Causal
 
 ## Hecho (con evidencia)
 - [x] Carpeta del proyecto creada: `E:\Genaro\Desktop\AgentOS`.
-- [x] Documento maestro v0.1: `docs/MASTER_PLAN.md`.
-- [x] ADR 0001–0004 redactados (estado: *Propuesto*).
-- [x] Inventario del entorno (2026-10-11):
+- [x] Repositorio Git inicializado con rama principal `main`.
+- [x] Documento maestro actualizado a v0.2: `docs/MASTER_PLAN.md`.
+- [x] Especificación técnica del Kernel Causal: `docs/SPEC_CAUSAL_KERNEL.md`.
+- [x] Documento de lluvia de ideas e investigación de frontera: `research/BRAINSTORM.md`.
+- [x] Registro de Decisiones Arquitectónicas (ADRs):
+  - ADR-0001: Rust estable y target `x86_64-unknown-none`.
+  - ADR-0002: Arranque UEFI con Limine.
+  - ADR-0003: Microkernel por capacidades e IA fuera de Ring 0.
+  - ADR-0004: Entorno de desarrollo (QEMU + serie + xtask).
+  - ADR-0005: El Kernel Causal, Multiverso con Escrow y Análisis Contrafactual.
+- [x] Inventario del entorno local (2026-10-11):
   - Git 2.50 ✅
   - Python 3.12 ✅
-  - Hipervisor activo ✅
-  - Rust ❌
-  - QEMU ❌
-  - gdb ❌
+  - Virtualización por hipervisor activa ✅
+  - Rust (`rustup` / `cargo`) ❌ No instalado
+  - QEMU (`qemu-system-x86_64`) ❌ No instalado
 
-## Pendiente
-- [ ] Aprobación o corrección de los ADR por el fundador.
-- [ ] **M1.0:** instalar Rust (rustup, target `x86_64-unknown-none`) y QEMU, con autorización del fundador.
-- [ ] F0-2: lecturas prioritarias (AIOS, arXiv 2602.08199, manual de seL4, Oppermann 1–4).
-- [ ] F0-3: búsqueda sistemática de kernels nativos para agentes (2023–2026).
-- [ ] Verificar las fuentes marcadas [P] en el documento maestro.
+## En progreso
+- [ ] Aprobación de los ADRs (0001 al 0005) por el fundador.
+- [ ] Decisión de inicio:
+  - **Pista K:** Instalación de herramientas (Rust + QEMU) para el Hito M1.0 en QEMU.
+  - **Pista R:** Estructuración del primer crate modular `crates/causal-core` para implementar el Grafo Causal y el buffer de Escrow.
 
 ## Código compilado o ejecutado
-Ninguno todavía.
-
-## Próximo paso
-**M1.0 — Instalación y verificación de herramientas.**
+Ninguno todavía (Fase de especificación y diseño completada).
