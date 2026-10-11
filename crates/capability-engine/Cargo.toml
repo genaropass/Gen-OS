@@ -1,0 +1,11 @@
+[package]
+name = "capability-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Motor de seguridad por capacidades y árboles de derivación para AgentOS"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]

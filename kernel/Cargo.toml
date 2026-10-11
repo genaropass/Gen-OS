@@ -1,0 +1,17 @@
+[package]
+name = "agentos-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "Microkernel Bare-Metal de AgentOS para x86-64"
+
+[[bin]]
+name = "agentos-kernel"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+
+[features]
+default = []
+test-exit = []
