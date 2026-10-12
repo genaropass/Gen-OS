@@ -108,6 +108,7 @@ pub fn run_interactive_shell() {
                 println!("  fork <branch_id>            - Crea/cambia a una rama especulativa del Multiverso");
                 println!("  commit [branch_id]          - Confirma atómicamente una rama del Multiverso");
                 println!("  abort [branch_id]           - Descarta en O(1) una rama especulativa");
+                println!("  agent [orden]               - Ejecuta tu agente personal (Gmail, LinkedIn, FB) con Escrow");
                 println!("  vm eval                     - Ejecuta un programa de bytecode AVM con gas");
                 println!("  bench                       - Ejecuta la suite de microbenchmarks");
                 println!("  demo                        - Ejecuta la demostración automatizada completa");
@@ -361,6 +362,14 @@ pub fn run_interactive_shell() {
                     println!("  Resultado de ejecucion: {:?}", res);
                     println!("  Gas consumido: {} | Registro R0: {:?}", 100 - vm.gas_remaining, vm.registers[0]);
                 }
+            }
+            "agent" | "ask" => {
+                let prompt = if rest.is_empty() {
+                    None
+                } else {
+                    Some(rest.join(" "))
+                };
+                crate::agent_cli::run_personal_agent_cli(prompt.as_deref());
             }
             "bench" => {
                 crate::bench::run_benchmarks();

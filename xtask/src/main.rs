@@ -15,6 +15,7 @@ use agent_vm::{AgentVm, Opcode, Value};
 pub mod bench;
 pub mod shell;
 pub mod doctor;
+pub mod agent_cli;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -53,8 +54,12 @@ fn main() {
         "bench" => {
             bench::run_benchmarks();
         }
+        "agent" => {
+            let prompt = args.get(2).map(|s| s.as_str());
+            agent_cli::run_personal_agent_cli(prompt);
+        }
         _ => {
-            eprintln!("Uso: cargo xtask [build | build-test | run | test | test-qemu | doctor | demo | shell | bench]");
+            eprintln!("Uso: cargo xtask [build | build-test | run | test | test-qemu | doctor | demo | shell | bench | agent]");
             std::process::exit(1);
         }
     }
