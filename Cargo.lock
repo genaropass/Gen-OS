@@ -11,6 +11,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-scheduler"
+version = "0.1.0"
+dependencies = [
+ "causal-core",
+]
+
+[[package]]
 name = "agentos-kernel"
 version = "0.1.0"
 dependencies = [

@@ -4,6 +4,7 @@ members = [
     "crates/capability-engine",
     "crates/agent-runtime",
     "crates/semantic-fs",
+    "crates/agent-scheduler",
     "kernel",
     "xtask",
 ]
@@ -12,6 +13,7 @@ default-members = [
     "crates/capability-engine",
     "crates/agent-runtime",
     "crates/semantic-fs",
+    "crates/agent-scheduler",
     "xtask",
 ]
 resolver = "2"

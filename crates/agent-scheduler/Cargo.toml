@@ -1,0 +1,14 @@
+[package]
+name = "agent-scheduler"
+version = "0.1.0"
+edition = "2021"
+description = "Planificador Causal de Recursos e Inferencia (SchedCP) para AgentOS"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+causal-core = { path = "../causal-core", default-features = false }
+
+[dev-dependencies]
