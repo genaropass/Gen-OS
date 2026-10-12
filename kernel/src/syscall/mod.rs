@@ -20,6 +20,12 @@ pub const SYS_ABORT_BRANCH: u64 = 5;
 pub const SYS_CAP_MINT: u64 = 6;      // Bloqueado para Ring 3 (corrige H1)
 pub const SYS_CAP_DERIVE: u64 = 7;
 pub const SYS_CAP_REVOKE: u64 = 8;
+pub const SYS_AGENT_SPAWN: u64 = 10;
+pub const SYS_AGENT_SUSPEND: u64 = 11;
+pub const SYS_AGENT_RESUME: u64 = 12;
+pub const SYS_AGENT_KILL: u64 = 13;
+pub const SYS_BUDGET_QUERY: u64 = 14;
+pub const SYS_BUDGET_DONATE: u64 = 15;
 
 /// Estado global del subsistema de llamadas al sistema en Ring 0
 pub struct SyscallState {
@@ -152,6 +158,59 @@ pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u6
             match state.cspace.revoke(cap_id) {
                 Ok(revoked_count) => revoked_count as i64,
                 Err(_) => EINVAL,
+            }
+        }
+
+        SYS_AGENT_SPAWN => {
+            // arg1: entry_point, arg2: max_gas, arg3: max_cpu_ms
+            let manifest = crate::agent::AgentManifest {
+                name: *b"agent_child_spawned\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                intent: [0u8; 64],
+                budget: crate::agent::AgentBudget::new(arg3 * 1000, 4 * 1024 * 1024, arg2, 1000),
+                security_label: SecurityLabel::UNTRUSTED_EXTERNAL,
+                parent: Some(crate::agent::AgentId(1)),
+                entry_point: arg1,
+            };
+
+            match crate::agent::spawn_agent(manifest, &mut state.ledger) {
+                Ok(new_id) => new_id.0 as i64,
+                Err(_) => -1,
+            }
+        }
+
+        SYS_AGENT_SUSPEND => {
+            // arg1: agent_id
+            let id = crate::agent::AgentId(arg1);
+            match crate::agent::suspend_agent(id) {
+                Ok(()) => 0,
+                Err(_) => EINVAL,
+            }
+        }
+
+        SYS_AGENT_RESUME => {
+            // arg1: agent_id
+            let id = crate::agent::AgentId(arg1);
+            match crate::agent::resume_agent(id) {
+                Ok(()) => 0,
+                Err(_) => EINVAL,
+            }
+        }
+
+        SYS_AGENT_KILL => {
+            // arg1: agent_id, arg2: exit_code
+            let id = crate::agent::AgentId(arg1);
+            match crate::agent::kill_agent(id, arg2 as u32, &mut state.ledger) {
+                Ok(()) => 0,
+                Err(_) => EINVAL,
+            }
+        }
+
+        SYS_BUDGET_QUERY => {
+            // arg1: agent_id -> Retorna gas restante
+            let id = crate::agent::AgentId(arg1);
+            match crate::agent::query_budget(id) {
+                Some(budget) => (budget.max_gas_units.saturating_sub(budget.gas_units)) as i64,
+                None => EINVAL,
             }
         }
 

@@ -20,6 +20,7 @@ pub mod sync;
 pub mod shell;
 pub mod bench;
 pub mod loader;
+pub mod agent;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -208,6 +209,26 @@ pub extern "C" fn _start() -> ! {
         "[AgentOS::Syscall] Autotest int 0x80 exitoso: SYS_EFFECT_LOG retorno effect_id={}",
         sys_ret
     );
+
+    // 11b. Inicializar Subsistema de Agentes Nativos en Ring 0
+    agent::init();
+    let agent_manifest = agent::AgentManifest {
+        name: *b"agent_root_sentinel\0\0\0\0\0\0\0\0\0\0\0\0\0",
+        intent: [0x55; 64],
+        budget: agent::AgentBudget::new(100_000, 16 * 1024 * 1024, 50_000, 500),
+        security_label: SecurityLabel::TRUSTED_KERNEL,
+        parent: None,
+        entry_point: 0x0040_0000,
+    };
+    if let Ok(spawned_id) = agent::spawn_agent(agent_manifest, &mut ledger) {
+        let budget = agent::query_budget(spawned_id).unwrap();
+        println!(
+            "[AgentOS::Agent] Autotest OK: Agente nativo ID={} instanciado (Gas={}/{}, Estado=Ready)",
+            spawned_id.0, budget.gas_units, budget.max_gas_units
+        );
+        let _ = agent::suspend_agent(spawned_id);
+        let _ = agent::resume_agent(spawned_id);
+    }
 
     // 12. Inicializar Planificador Preemptivo de Ring 0
     println!("[AgentOS::Sched] Inicializando planificador preemptivo de Ring 0...");
