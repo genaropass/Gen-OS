@@ -1,0 +1,15 @@
+[package]
+name = "semantic-fs"
+version = "0.1.0"
+edition = "2021"
+description = "Sistema de Archivos Semantico y Ramas Copy-on-Write (BranchFS) para AgentOS"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+causal-core = { path = "../causal-core", default-features = false }
+capability-engine = { path = "../capability-engine", default-features = false }
+
+[dev-dependencies]
