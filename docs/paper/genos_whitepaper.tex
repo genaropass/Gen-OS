@@ -3,8 +3,11 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
@@ -142,7 +145,20 @@ GenOS is implemented from first principles in 100\% stable Rust (\texttt{rustc 1
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.98\linewidth]{fig_arch_overview.png}
+\begin{tikzpicture}[
+    node distance=0.4cm,
+    box/.style={rectangle, draw=black!70, fill=blue!5, thick, minimum width=7.5cm, minimum height=0.7cm, align=center, font=\scriptsize\sffamily},
+    kbox/.style={rectangle, draw=green!50!black, fill=green!8, thick, minimum width=7.5cm, minimum height=0.8cm, align=center, font=\scriptsize\sffamily\bfseries},
+    hwbox/.style={rectangle, draw=red!60!black, fill=red!8, thick, minimum width=7.5cm, minimum height=0.65cm, align=center, font=\scriptsize\ttfamily}
+]
+    \node[box] (ring3) {Ring 3 User-Space: Isolated Agent AddressSpaces (PML4) $\mid$ AgentVM / WASM $\mid$ MCP};
+    \node[hwbox, below=0.25cm of ring3] (syscall) {Fast SYSCALL / SYSRET MSRs (STAR, LSTAR, FMASK) + SMAP (stac/clac)};
+    \node[kbox, below=0.25cm of syscall] (ring0) {Ring 0 Microkernel (\#![no\_std]): CSpace v2 $\mid$ DIFC Lattice $\mid$ Multiverse Escrow $\mid$ SchedCP};
+    \node[hwbox, below=0.25cm of ring0] (hw) {x86-64 Hardware Controls: CR0.WP $\mid$ EFER.NXE (W$\oplus$X) $\mid$ CR4.SMEP/SMAP/UMIP $\mid$ Limine UEFI};
+    \draw[<->, thick] (ring3) -- (syscall);
+    \draw[<->, thick] (syscall) -- (ring0);
+    \draw[<->, thick] (ring0) -- (hw);
+\end{tikzpicture}
 \caption{Architectural overview of GenOS: Limine UEFI bootloader, higher-half microkernel in Ring 0, hardware control registers, and Ring 3 isolated Agent AddressSpaces governed by CSpace, DIFC, and the Multiverse Escrow Engine.}
 \label{fig:arch}
 \end{figure}
@@ -247,8 +263,20 @@ $$L_1 \sqsubseteq L_2 \iff (C_1 \le C_2) \ \land \ (I_1 \ge I_2)$$
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.85\linewidth]{fig_difc_lattice.png}
-\caption{The GenOS Information Flow Control Lattice: Bell-LaPadula confidentiality ($C$) and Biba integrity ($I$) planes mediating agent data propagation.}
+\begin{tikzpicture}[
+    node distance=0.8cm,
+    lbox/.style={rectangle, rounded corners, draw=black!70, fill=orange!10, thick, minimum width=2.4cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily}
+]
+    \node[lbox, fill=red!12] (top) {$\langle C=100, I=0 \rangle$\\Secret \& Tainted};
+    \node[lbox, below left=0.6cm and 0.4cm of top] (left) {$\langle C=100, I=100 \rangle$\\Sovereign Kernel};
+    \node[lbox, below right=0.6cm and 0.4cm of top] (right) {$\langle C=0, I=0 \rangle$\\Public Untrusted Web};
+    \node[lbox, fill=green!12, below right=0.6cm and 0.4cm of left] (bot) {$\langle C=0, I=100 \rangle$\\Public Verified System};
+    \draw[->, thick] (bot) -- (left) node[midway, left, font=\tiny] {$C \uparrow$};
+    \draw[->, thick] (bot) -- (right) node[midway, right, font=\tiny] {$I \downarrow$};
+    \draw[->, thick] (left) -- (top) node[midway, left, font=\tiny] {$I \downarrow$};
+    \draw[->, thick] (right) -- (top) node[midway, right, font=\tiny] {$C \uparrow$};
+\end{tikzpicture}
+\caption{The GenOS Information Flow Control Lattice: Bell-LaPadula confidentiality ($C$) and Biba integrity ($I$) planes mediating agent data propagation ($L_1 \sqsubseteq L_2 \iff C_1 \le C_2 \land I_1 \ge I_2$).}
 \label{fig:lattice}
 \end{figure}
 
@@ -298,7 +326,24 @@ Because autoregressive models are probabilistic, an agent executing an action pl
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.98\linewidth]{fig_multiverse_escrow.png}
+\begin{tikzpicture}[
+    node distance=0.35cm,
+    pbox/.style={rectangle, draw=black!70, fill=blue!6, thick, minimum width=6.8cm, minimum height=0.55cm, align=center, font=\scriptsize\sffamily},
+    cbox/.style={rectangle, draw=green!50!black, fill=green!10, thick, minimum width=3.2cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily\bfseries},
+    abox/.style={rectangle, draw=red!60!black, fill=red!10, thick, minimum width=3.2cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily\bfseries}
+]
+    \node[pbox] (p1) {1. \texttt{begin\_transaction()} $\rightarrow$ Fork Isolated Branch $\mathcal{B}_k$};
+    \node[pbox, below=0.25cm of p1] (p2) {2--3. \texttt{BranchFS} Copy-on-Write + \texttt{execute\_tool()} Customs};
+    \node[pbox, fill=yellow!15, below=0.25cm of p2] (p3) {4. \texttt{EscrowBuffer}: Hold Irreversible Actions (91.8 ns/op)};
+    \node[pbox, below=0.25cm of p3] (p4) {5. \texttt{verify\_invariants()} $\rightarrow$ Gas, Taint \& Policy Audit};
+    \node[cbox, below left=0.35cm and -1.5cm of p4] (commit) {6. \texttt{commit()}: Flush CoW\\\& Dispatch Hardware I/O};
+    \node[abox, below right=0.35cm and -1.5cm of p4] (abort) {7. \texttt{abort()}: $\mathcal{O}(1)$ Purge\\(Zero External Leakage)};
+    \draw[->, thick] (p1) -- (p2);
+    \draw[->, thick] (p2) -- (p3);
+    \draw[->, thick] (p3) -- (p4);
+    \draw[->, thick, green!50!black] (p4) -- (commit);
+    \draw[->, thick, red!60!black] (p4) -- (abort);
+\end{tikzpicture}
 \caption{The 7-Phase Multiverse Transaction Pipeline: Speculative branch fork, BranchFS Copy-on-Write, Escrow Buffer staging for external effects, and atomic $\mathcal{O}(1)$ rollback.}
 \label{fig:multiverse}
 \end{figure}
