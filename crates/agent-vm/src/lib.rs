@@ -111,6 +111,16 @@ impl<'a> AgentVm<'a> {
 
     /// Ejecuta un programa de bytecode completo hasta `Halt` o error
     pub fn run(&mut self, program: &[Opcode]) -> Result<Option<Value>, VmError> {
+        let res = self.run_loop(program);
+        if res.is_err() && self.agent.current_branch != BranchId(0) {
+            let branch = self.agent.current_branch;
+            self.supervisor.abort_and_contain(self.agent, branch);
+            self.agent.current_branch = BranchId(0);
+        }
+        res
+    }
+
+    fn run_loop(&mut self, program: &[Opcode]) -> Result<Option<Value>, VmError> {
         while self.pc < program.len() {
             let op = &program[self.pc];
             self.pc += 1;
@@ -338,5 +348,27 @@ mod tests {
             Opcode::Halt,
         ];
         assert_eq!(vm2.run(&fail_program).unwrap_err(), VmError::CapabilityViolation);
+    }
+
+    #[test]
+    fn test_vm_out_of_gas_purges_speculative_branch() {
+        let mut supervisor = AgentSupervisor::new();
+        let tools = ToolRegistry::new();
+        let mut agent = AgentInstance::new(AgentId(4), DomainId(4), AgentGoal::new("spec_loop", 10, 100));
+
+        let mut vm = AgentVm::new(&mut agent, &mut supervisor, &tools, 20);
+
+        // Programa que bifurca a una rama y entra en bucle infinito
+        let program = vec![
+            Opcode::ForkBranch(99),
+            Opcode::Push(Value::Int(1)),
+            Opcode::Jump(1), // Bucle infinito
+        ];
+
+        let err = vm.run(&program).unwrap_err();
+        assert_eq!(err, VmError::OutOfGas);
+        // La rama debe haberse abortado automáticamente y restaurado a 0
+        assert_eq!(vm.agent.current_branch, BranchId(0));
+        assert_eq!(vm.agent.status, agent_runtime::AgentStatus::Aborted);
     }
 }

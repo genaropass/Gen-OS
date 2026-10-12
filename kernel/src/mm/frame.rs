@@ -33,7 +33,7 @@ pub struct UsableRegion {
     pub length: u64,
 }
 
-/// Asignador de marcos físicos por avance (Bump Allocator sobre regiones físicas descubiertas)
+/// Asignador de marcos físicos con lista libre de reciclaje y bump allocator
 pub struct PhysicalMemoryManager {
     hhdm_offset: u64,
     regions: [UsableRegion; 32],
@@ -42,6 +42,8 @@ pub struct PhysicalMemoryManager {
     next_frame_addr: u64,
     total_usable_bytes: u64,
     allocated_frames: u64,
+    free_frames: [u64; 256],
+    free_frame_count: usize,
     initialized: bool,
 }
 
@@ -53,6 +55,8 @@ static PMM: IrqSpinLock<PhysicalMemoryManager> = IrqSpinLock::new(PhysicalMemory
     next_frame_addr: 0,
     total_usable_bytes: 0,
     allocated_frames: 0,
+    free_frames: [0; 256],
+    free_frame_count: 0,
     initialized: false,
 });
 
@@ -93,6 +97,15 @@ impl PhysicalMemoryManager {
             return None;
         }
 
+        // 1. Reutilizar marco reciclado de la lista libre si existe
+        if self.free_frame_count > 0 {
+            self.free_frame_count -= 1;
+            let addr = self.free_frames[self.free_frame_count];
+            self.allocated_frames += 1;
+            return Some(PhysFrame::from_start_address(addr));
+        }
+
+        // 2. Bump allocator sobre las regiones descubiertas
         while self.current_region_idx < self.region_count {
             let reg = self.regions[self.current_region_idx];
             let reg_end = reg.base + reg.length;
@@ -112,6 +125,17 @@ impl PhysicalMemoryManager {
         }
 
         None
+    }
+
+    /// Recicla un marco de memoria física liberado
+    pub fn free_frame(&mut self, frame: PhysFrame) {
+        if self.free_frame_count < self.free_frames.len() {
+            self.free_frames[self.free_frame_count] = frame.start_address();
+            self.free_frame_count += 1;
+            if self.allocated_frames > 0 {
+                self.allocated_frames -= 1;
+            }
+        }
     }
 
     pub fn total_usable_bytes(&self) -> u64 {
@@ -142,6 +166,11 @@ pub fn init(memmap: &LimineMemmapResponse, hhdm_offset: u64) {
 /// Asigna un marco físico global
 pub fn alloc_frame() -> Option<PhysFrame> {
     PMM.lock().alloc_frame()
+}
+
+/// Libera un marco físico global y lo retorna al PMM para reciclaje
+pub fn free_frame(frame: PhysFrame) {
+    PMM.lock().free_frame(frame);
 }
 
 /// Obtiene el offset del HHDM

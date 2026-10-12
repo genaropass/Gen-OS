@@ -108,9 +108,32 @@ pub struct Agent {
     pub parent: Option<AgentId>,
     pub children: Vec<AgentId>,
     pub entry_point: u64,
+    pub allocated_frames: Vec<crate::mm::frame::PhysFrame>,
 }
 
 impl Agent {
+    /// Asigna un marco de memoria física verificando el límite estricto de memoria del agente
+    pub fn allocate_frame(&mut self) -> Result<crate::mm::frame::PhysFrame, AgentError> {
+        let requested_bytes = (self.allocated_frames.len() + 1) * 4096;
+        if requested_bytes > self.budget.max_memory_bytes {
+            self.state = AgentState::Suspended;
+            return Err(AgentError::BudgetExhausted);
+        }
+
+        let frame = crate::mm::frame::alloc_frame().ok_or(AgentError::AddressSpaceCreationFailed)?;
+        self.allocated_frames.push(frame);
+        self.budget.memory_bytes = self.allocated_frames.len() * 4096;
+        Ok(frame)
+    }
+
+    /// Libera todos los marcos físicos asignados al agente retornándolos al PMM
+    pub fn free_all_frames(&mut self) {
+        for frame in self.allocated_frames.drain(..) {
+            crate::mm::frame::free_frame(frame);
+        }
+        self.budget.memory_bytes = 0;
+    }
+
     /// Verifica si el agente puede ejecutar una acción dentro de su presupuesto
     pub fn consume_gas(&mut self, amount: u64) -> Result<(), AgentError> {
         let new_gas = self.budget.gas_units.saturating_add(amount);
@@ -200,6 +223,7 @@ pub fn spawn_agent(
         parent: manifest.parent,
         children: Vec::new(),
         entry_point: manifest.entry_point,
+        allocated_frames: Vec::new(),
     };
 
     reg.agents.insert(id, agent);
@@ -253,6 +277,7 @@ pub fn kill_agent(
     let agent = reg.agents.get_mut(&id).ok_or(AgentError::AgentNotFound)?;
 
     agent.state = AgentState::Terminated(exit_code);
+    agent.free_all_frames();
 
     // Registrar efecto de terminación en el Grafo Causal
     let kill_effect = ledger.record_effect(
