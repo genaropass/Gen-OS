@@ -241,6 +241,9 @@ pub extern "C" fn _start() -> ! {
         println!("[AgentOS::Storage] Autotest lectura/escritura sector 0 LBA exitoso");
     }
 
+    // 11d. Inicializar Controlador de Red (VirtIO-Net / Loopback)
+    drivers::virtio_net::init();
+
     // 12. Inicializar Planificador Preemptivo de Ring 0
     println!("[AgentOS::Sched] Inicializando planificador preemptivo de Ring 0...");
     sched::init();

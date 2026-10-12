@@ -19,12 +19,12 @@ const VIRTIO_PCI_DEV_BLK_LEGACY: u16 = 0x1001;
 const VIRTIO_PCI_DEV_BLK_MODERN: u16 = 0x1042;
 
 #[inline]
-unsafe fn outl(port: u16, val: u32) {
+pub(crate) unsafe fn outl(port: u16, val: u32) {
     asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack, preserves_flags));
 }
 
 #[inline]
-unsafe fn inl(port: u16) -> u32 {
+pub(crate) unsafe fn inl(port: u16) -> u32 {
     let val: u32;
     asm!("in eax, dx", in("dx") port, out("eax") val, options(nomem, nostack, preserves_flags));
     val
