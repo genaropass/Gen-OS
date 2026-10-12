@@ -40,6 +40,14 @@ pub fn init() {
     println!("[AgentOS::Syscall] Despachador de syscalls registrado (ABI int 0x80)");
 }
 
+/// Verifica matematicamente la integridad del Merkle-DAG y retorna (es_integro, acciones_en_escrow)
+pub fn verify_kernel_ledger() -> Option<(bool, usize)> {
+    let state_opt = unsafe { &mut *SYSCALL_STATE.0.get() };
+    state_opt.as_ref().map(|s| {
+        (s.ledger.verify_merkle_integrity(), s.escrow.pending_count())
+    })
+}
+
 /// Despachador central de llamadas al sistema ejecutado en Ring 0
 pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u64) -> i64 {
     let state_opt = unsafe { &mut *SYSCALL_STATE.0.get() };

@@ -14,6 +14,7 @@ use agent_vm::{AgentVm, Opcode, Value};
 
 pub mod bench;
 pub mod shell;
+pub mod doctor;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -35,10 +36,13 @@ fn main() {
             assemble_esp();
             run_qemu(false);
         }
-        "test" => {
+        "test" | "test-qemu" => {
             build_kernel(true);
             assemble_esp();
             run_qemu(true);
+        }
+        "doctor" => {
+            doctor::run_doctor();
         }
         "demo" => {
             run_live_demo();
@@ -50,7 +54,7 @@ fn main() {
             bench::run_benchmarks();
         }
         _ => {
-            eprintln!("Uso: cargo xtask [build | build-test | run | test | demo | shell | bench]");
+            eprintln!("Uso: cargo xtask [build | build-test | run | test | test-qemu | doctor | demo | shell | bench]");
             std::process::exit(1);
         }
     }
@@ -93,33 +97,39 @@ fn assemble_esp() {
     let conf_dst = esp_boot.join("limine.conf");
     if conf_src.exists() {
         fs::copy(&conf_src, &conf_dst).expect("Fallo al copiar limine.conf a target/esp");
+    } else {
+        eprintln!("[xtask] Error: No se encontro {}", conf_src.display());
+        std::process::exit(1);
     }
 
-    // 3. Copiar cargador UEFI BOOTX64.EFI
-    let efi_src = PathBuf::from("boot/BOOTX64.EFI");
+    // 3. Copiar cargador UEFI BOOTX64.EFI verificando su integridad
+    let efi_src = PathBuf::from("boot/limine/BOOTX64.EFI");
     let efi_dst = esp_boot.join("BOOTX64.EFI");
-    if efi_src.exists() {
-        fs::copy(&efi_src, &efi_dst).expect("Fallo al copiar BOOTX64.EFI a target/esp");
+    if !efi_src.exists() {
+        eprintln!("[xtask] Error critico: No se encontro {}", efi_src.display());
+        eprintln!("[xtask] El bootloader Limine versionado es requerido.");
+        std::process::exit(1);
     }
+
+    let efi_bytes = fs::read(&efi_src).expect("No se pudo leer boot/limine/BOOTX64.EFI");
+    let hash_bytes = causal_core::hash::sha256(&efi_bytes);
+    let mut hash_hex = String::with_capacity(64);
+    for b in hash_bytes {
+        hash_hex.push_str(&format!("{:02x}", b));
+    }
+    if !hash_hex.eq_ignore_ascii_case(doctor::EXPECTED_BOOTX64_SHA256) {
+        eprintln!("[xtask] Error de seguridad: Hash SHA-256 de BOOTX64.EFI no coincide!");
+        eprintln!("        Esperado: {}", doctor::EXPECTED_BOOTX64_SHA256);
+        eprintln!("        Obtenido: {}", hash_hex);
+        std::process::exit(1);
+    }
+
+    fs::copy(&efi_src, &efi_dst).expect("Fallo al copiar BOOTX64.EFI a target/esp");
+    println!("[xtask] Copiado: BOOTX64.EFI (Limine 8.7.0 SHA-256 verificado OK) -> target/esp/EFI/BOOT/BOOTX64.EFI");
 }
 
 fn run_qemu(test_mode: bool) {
-    let qemu_candidates = [
-        "qemu-system-x86_64",
-        "qemu-system-x86_64.exe",
-        r"C:\Program Files\qemu\qemu-system-x86_64.exe",
-        r"C:\Program Files (x86)\qemu\qemu-system-x86_64.exe",
-        r"E:\Genaro\qemu\qemu-system-x86_64.exe",
-    ];
-
-    let mut qemu_bin = None;
-    for cand in &qemu_candidates {
-        if Command::new(cand).arg("--version").output().is_ok() {
-            qemu_bin = Some(cand.to_string());
-            break;
-        }
-    }
-
+    let qemu_bin = doctor::find_qemu();
     let qemu_path = match qemu_bin {
         Some(bin) => bin,
         None => {
@@ -133,29 +143,51 @@ fn run_qemu(test_mode: bool) {
         }
     };
 
-    println!("[xtask] Lanzando QEMU via: {}", qemu_path);
+    println!("[xtask] Lanzando QEMU via: {}", qemu_path.display());
 
-    let mut cmd = Command::new(qemu_path);
+    let mut cmd = Command::new(&qemu_path);
     cmd.args([
         "-drive", "format=raw,file=fat:rw:target/esp",
-        "-serial", "stdio",
         "-m", "512M",
         "-no-reboot",
     ]);
 
-    if test_mode {
-        cmd.args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-display", "none"]);
+    // Buscar OVMF para arranque UEFI genuino
+    let ovmf_path = doctor::find_ovmf(&Some(qemu_path.clone()));
+    if let Some(ovmf) = ovmf_path {
+        println!("[xtask] Firmware UEFI detectado: {}", ovmf.display());
+        cmd.args(["-bios", ovmf.to_str().unwrap()]);
+    } else {
+        println!("[xtask] AVISO: Firmware OVMF no detectado en directorios estandar.");
+        println!("        QEMU intentara arrancar; para UEFI explicito, coloque OVMF.fd en boot/ o instale QEMU.");
     }
 
-    let status: ExitStatus = cmd.status().expect("Fallo al ejecutar proceso QEMU");
     if test_mode {
+        let log_file = "target/qemu-serial.log";
+        cmd.args([
+            "-serial", &format!("file:{}", log_file),
+            "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+            "-display", "none",
+        ]);
+        println!("[xtask] Modo de prueba automatizada QEMU headless...");
+        let status: ExitStatus = cmd.status().expect("Fallo al ejecutar proceso QEMU");
         let code = status.code().unwrap_or(0);
+
+        if let Ok(serial_content) = fs::read_to_string(log_file) {
+            println!("\n--- SALIDA SERIAL CAPTURADA DE QEMU ---");
+            println!("{}", serial_content.trim());
+            println!("---------------------------------------\n");
+        }
+
         if code == 33 {
             println!("\n[xtask] PRUEBA EXITOSA: El kernel reporto QemuExitCode::Success (codigo 33).");
         } else {
             eprintln!("\n[xtask] PRUEBA FALLIDA: Codigo de salida inesperado: {}", code);
             std::process::exit(1);
         }
+    } else {
+        cmd.args(["-serial", "stdio"]);
+        let _ = cmd.status().expect("Fallo al ejecutar proceso QEMU");
     }
 }
 

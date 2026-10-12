@@ -128,13 +128,28 @@ fn execute_command(cmd: &str) {
         }
         "causal" => {
             println!("\x1b[1;34m[AgentOS::Causal]\x1b[0m");
-            println!("  Merkle-DAG Criptografico activo con SHA-256");
-            println!("  Invariante de inmutabilidad: VERIFICADO OK");
+            match crate::syscall::verify_kernel_ledger() {
+                Some((is_valid, pending_escrow)) => {
+                    if is_valid {
+                        println!("  Merkle-DAG: \x1b[1;32mINTEGRO (100% de hashes SHA-256 matematicamente validos)\x1b[0m");
+                    } else {
+                        println!("  Merkle-DAG: \x1b[1;31mFALLO DE INTEGRIDAD (hashes alterados)\x1b[0m");
+                    }
+                    println!("  Acciones retenidas en Escrow: {}", pending_escrow);
+                }
+                None => {
+                    println!("  Grafo Causal no inicializado aún");
+                }
+            }
         }
         "mem" => {
             println!("\x1b[1;34m[AgentOS::Memory]\x1b[0m");
-            println!("  PMM: Paging de 4 niveles x86-64 activo (HHDM mapeado)");
-            println!("  Kernel Heap: Coalescing Allocator activo (1 MiB reservado)");
+            let (frames_alloc, bytes_usable) = crate::mm::frame::pmm_stats();
+            let (heap_alloc, heap_free) = crate::mm::heap::heap_stats();
+            println!("  PMM: {} marcos asignados ({} KiB), {} MiB utilizables totales",
+                frames_alloc, frames_alloc * 4, bytes_usable / (1024 * 1024));
+            println!("  Heap: {} bytes en uso, {} bytes libres (capacidad 1 MiB)",
+                heap_alloc, heap_free);
         }
         "bench" => {
             println!("\x1b[1;33m[AgentOS::Benchmark] Ejecutando 1,000 bloques SHA-256 en Ring 0...\x1b[0m");

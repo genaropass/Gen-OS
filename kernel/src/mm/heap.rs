@@ -180,3 +180,29 @@ pub fn init() {
         HEAP_SIZE / 1024
     );
 }
+
+impl KernelAllocator {
+    pub fn stats(&self) -> (usize, usize) {
+        self.lock.lock();
+        let mut total_free = 0;
+        let mut total_allocated = 0;
+        let mut curr = self.head.load(Ordering::Acquire);
+        while !curr.is_null() {
+            unsafe {
+                if (*curr).is_free {
+                    total_free += (*curr).size;
+                } else {
+                    total_allocated += (*curr).size;
+                }
+                curr = (*curr).next;
+            }
+        }
+        self.lock.unlock();
+        (total_allocated, total_free)
+    }
+}
+
+/// Retorna estadisticas reales del Heap: (bytes_asignados, bytes_libres)
+pub fn heap_stats() -> (usize, usize) {
+    ALLOCATOR.stats()
+}

@@ -128,4 +128,54 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_sha256_nist_cavp_abc() {
+        // NIST CAVP: "abc"
+        // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+        let hash = sha256(b"abc");
+        assert_eq!(
+            hash,
+            [
+                0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
+                0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+                0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
+                0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sha256_nist_cavp_56_bytes() {
+        // NIST CAVP: "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" (56 bytes)
+        // 248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1
+        let input = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+        let hash = sha256(input);
+        assert_eq!(
+            hash,
+            [
+                0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8,
+                0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39,
+                0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67,
+                0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sha256_nist_cavp_112_bytes() {
+        // NIST CAVP: 112 bytes multi-block
+        // cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1
+        let input = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+        let hash = sha256(input);
+        assert_eq!(
+            hash,
+            [
+                0xcf, 0x5b, 0x16, 0xa7, 0x78, 0xaf, 0x83, 0x80,
+                0x03, 0x6c, 0xe5, 0x9e, 0x7b, 0x04, 0x92, 0x37,
+                0x0b, 0x24, 0x9b, 0x11, 0xe8, 0xf0, 0x7a, 0x51,
+                0xaf, 0xac, 0x45, 0x03, 0x7a, 0xfe, 0xe9, 0xd1
+            ]
+        );
+    }
 }

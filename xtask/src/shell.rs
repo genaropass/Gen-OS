@@ -9,7 +9,7 @@
 
 use std::io::{self, Write};
 use causal_core::{CausalLedger, DomainId, BranchId, EffectId, SecurityLabel, Reversibility};
-use capability_engine::{Permissions, CapId};
+use capability_engine::Permissions;
 use agent_runtime::{AgentId, AgentGoal, AgentInstance, AgentSupervisor, ToolRegistry};
 use semantic_fs::{BranchFs, SemanticMetadata, EmbeddingVector};
 use agent_ipc::{IpcRouter, IpcPayload};
@@ -53,7 +53,7 @@ pub fn run_interactive_shell() {
     );
     next_agent_id += 1;
 
-    let (ch_id, obj_id) = router.create_channel(ag1.id, ag2.id, true);
+    let (_ch_id, obj_id) = router.create_channel(ag1.id, ag2.id, true);
     let _cap1 = ag1.grant_capability(obj_id, Permissions::WRITE);
     let _cap2 = ag2.grant_capability(obj_id, Permissions::READ);
 
@@ -189,13 +189,35 @@ pub fn run_interactive_shell() {
                 let recip_idx = agents.iter().position(|a| a.id.0 == to_id);
 
                 if let (Some(s_idx), Some(r_idx)) = (sender_idx, recip_idx) {
-                    let sender = &agents[s_idx];
+                    let sender_id = agents[s_idx].id;
                     let recipient_id = agents[r_idx].id;
 
-                    let cap_token = CapId(1);
+                    let (channel_id, obj_id) = match router.find_channel(sender_id, recipient_id) {
+                        Some(pair) => pair,
+                        None => {
+                            let (new_ch, new_obj) = router.create_channel(sender_id, recipient_id, true);
+                            let _ = agents[s_idx].grant_capability(new_obj, Permissions::WRITE);
+                            let _ = agents[r_idx].grant_capability(new_obj, Permissions::READ);
+                            (new_ch, new_obj)
+                        }
+                    };
+
+                    let cap_token = match agents[s_idx]
+                        .cspace
+                        .caps()
+                        .iter()
+                        .find(|c| c.object_id == obj_id && c.permissions.contains(Permissions::WRITE))
+                    {
+                        Some(c) => c.id,
+                        None => {
+                            println!("\x1b[1;31m[IPC ERROR] El emisor (ID:{}) no posee capacidad WRITE sobre el canal (ObjectId: {:?})\x1b[0m", from_id, obj_id);
+                            continue;
+                        }
+                    };
+
                     let res = router.send(
-                        sender,
-                        ch_id,
+                        &agents[s_idx],
+                        channel_id,
                         recipient_id,
                         current_branch,
                         cap_token,
@@ -206,8 +228,19 @@ pub fn run_interactive_shell() {
                     match res {
                         Ok(eff_id) => {
                             println!("\x1b[1;32m[IPC OK] Mensaje enviado! Registrado en Merkle-DAG con EffectId: {:?}\x1b[0m", eff_id);
-                            let cap_read = CapId(1);
-                            if let Ok(Some(msg)) = router.recv(&mut agents[r_idx], ch_id, cap_read) {
+                            let cap_read = match agents[r_idx]
+                                .cspace
+                                .caps()
+                                .iter()
+                                .find(|c| c.object_id == obj_id && c.permissions.contains(Permissions::READ))
+                            {
+                                Some(c) => c.id,
+                                None => {
+                                    println!("\x1b[1;33m[IPC AVISO] El receptor no posee capacidad READ para desapilar el mensaje del buffer.\x1b[0m");
+                                    continue;
+                                }
+                            };
+                            if let Ok(Some(msg)) = router.recv(&mut agents[r_idx], channel_id, cap_read) {
                                 println!("  -> Receptor (ID:{}) recibio: '{:?}'", to_id, msg.payload);
                                 if agents[r_idx].is_tainted() {
                                     println!("  -> \x1b[1;31m[ALERTA IFC] El receptor ha sido CONTAMINADO automaticamente por el mensaje!\x1b[0m");

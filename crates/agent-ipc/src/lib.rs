@@ -120,6 +120,13 @@ impl IpcRouter {
         (ch_id, obj_id)
     }
 
+    /// Busca un canal existente entre dos agentes (en cualquier dirección)
+    pub fn find_channel(&self, a: AgentId, b: AgentId) -> Option<(ChannelId, ObjectId)> {
+        self.channels.iter().find(|ch| {
+            (ch.endpoint_a == a && ch.endpoint_b == b) || (ch.endpoint_a == b && ch.endpoint_b == a)
+        }).map(|ch| (ch.id, ch.object_id))
+    }
+
     /// Envía un mensaje IPC verificando capacidades, propagando taint y registrando en el Merkle-DAG
     pub fn send(
         &mut self,

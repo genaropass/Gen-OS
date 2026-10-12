@@ -146,3 +146,11 @@ pub fn hhdm_offset() -> u64 {
         pmm.hhdm_offset()
     }
 }
+
+/// Retorna estadisticas reales de PMM: (marcos_asignados, total_bytes_usables)
+pub fn pmm_stats() -> (u64, u64) {
+    unsafe {
+        let pmm = &*PMM.0.get();
+        (pmm.allocated_frames, pmm.total_usable_bytes)
+    }
+}
