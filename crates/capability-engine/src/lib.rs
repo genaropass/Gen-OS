@@ -156,6 +156,11 @@ impl CSpace {
         Ok(child_id)
     }
 
+    /// Retorna una referencia a la lista de capacidades del espacio
+    pub fn caps(&self) -> &[Capability] {
+        &self.caps
+    }
+
     /// Obtiene una capacidad por ID
     pub fn get(&self, id: CapId) -> Option<&Capability> {
         self.caps.iter().find(|c| c.id == id)

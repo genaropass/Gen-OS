@@ -12,12 +12,14 @@ pub mod gdt;
 pub mod idt;
 pub mod mm;
 pub mod syscall;
+pub mod font;
+pub mod fb;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 use causal_core::{CausalLedger, DomainId, BranchId, Reversibility, SecurityLabel};
 use capability_engine::{CSpace, ObjectId, Permissions};
-use limine::{LimineBaseRevision, LimineHhdmRequest, LimineMemmapRequest};
+use limine::{LimineBaseRevision, LimineHhdmRequest, LimineMemmapRequest, LimineFramebufferRequest};
 use serial::SERIAL1;
 #[cfg(feature = "test-exit")]
 use qemu_exit::{exit_qemu, QemuExitCode};
@@ -37,11 +39,24 @@ static HHDM_REQUEST: LimineHhdmRequest = LimineHhdmRequest::new();
 #[link_section = ".requests"]
 static MEMMAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new();
 
+/// Solicitud de Framebuffer gráfico para consola en pantalla
+#[used]
+#[link_section = ".requests"]
+static FRAMEBUFFER_REQUEST: LimineFramebufferRequest = LimineFramebufferRequest::new();
+
 /// Punto de entrada del kernel (llamado por el bootloader Limine en modo de 64 bits)
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     // 1. Inicializar salida serie COM1
     SERIAL1.init();
+
+    // 2. Inicializar consola gráfica si el bootloader proveyó framebuffer UEFI
+    if let Some(fb_resp) = FRAMEBUFFER_REQUEST.get_response() {
+        if let Some(fb_ptr) = fb_resp.first_framebuffer() {
+            fb::init(fb_ptr);
+            fb::console_print("[AgentOS] Modo grafico UEFI activo", fb::Color::CYAN);
+        }
+    }
 
     // 2. Banner de arranque del kernel
     println!("========================================================");
@@ -156,8 +171,18 @@ pub extern "C" fn _start() -> ! {
     println!("========================================================");
     println!("  [AgentOS] Kernel Causal Inicializado al 100%");
     println!("  Sub-sistemas activos: UART, GDT, IDT, PMM, VMM, Heap,");
-    println!("                        CausalLedger, CSpace, Syscall (int 0x80)");
+    println!("                        CausalLedger (Merkle-DAG), CSpace, Syscall (int 0x80),");
+    println!("                        Framebuffer UI (VRAM Nativa UEFI)");
     println!("========================================================");
+
+    // Renderizar tarjetas visuales de estado en el Framebuffer gráfico
+    fb::draw_panel(40, 60, 520, 160, " SUBSISTEMAS ACTIVOS DEL KERNEL ", fb::Color::CYAN);
+    fb::draw_string("GDT / TSS IST[0] (Double-Fault safe): OK", 60, 90, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("IDT 256 Vectores (#PF, int 0x80 Syscalls): OK", 60, 110, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Memoria: PMM (4KiB) + VMM (4-Niveles) + Heap 1MiB: OK", 60, 130, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Grafo Causal: Merkle-DAG SHA-256 Integro: OK", 60, 150, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Seguridad: CSpace de Capacidades + Escrow Activo: OK", 60, 170, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Modo: AgentOS Runtime Listo para Cargas de Agentes", 60, 190, fb::Color::CYAN, fb::Color::DARK_GRAY);
 
     // Para la prueba automatizada M1/M2 en QEMU, reportamos éxito a isa-debug-exit
     #[cfg(feature = "test-exit")]

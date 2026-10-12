@@ -1,0 +1,16 @@
+[package]
+name = "agent-vm"
+version = "0.1.0"
+edition = "2021"
+description = "Maquina Virtual Causal y Motor de Bytecode para Agentes de AgentOS"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+causal-core = { path = "../causal-core", default-features = false }
+capability-engine = { path = "../capability-engine", default-features = false }
+agent-runtime = { path = "../agent-runtime" }
+
+[dev-dependencies]

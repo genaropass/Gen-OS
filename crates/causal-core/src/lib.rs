@@ -57,8 +57,10 @@ impl SecurityLabel {
     }
 }
 
-/// Registro atómico de un Efecto en el Libro Mayor Causal
-#[derive(Clone, Debug)]
+pub mod hash;
+
+/// Registro atómico de un Efecto en el Libro Mayor Causal (Nodo del Merkle-DAG)
+#[derive(Clone, Debug, PartialEq)]
 pub struct CausalRecord {
     pub id: EffectId,
     pub branch: BranchId,
@@ -70,10 +72,12 @@ pub struct CausalRecord {
     pub causes: Vec<EffectId>,
     /// Resumen o firma del payload
     pub payload_digest: [u8; 32],
+    /// Hash criptográfico Merkle (sella id, procedencia, causas y payload)
+    pub merkle_hash: [u8; 32],
 }
 
 /// El Libro Mayor Causal (Causal Ledger)
-/// Almacén estructurado en DAG que garantiza la inmutabilidad y trazabilidad
+/// Almacén estructurado en Merkle-DAG que garantiza la inmutabilidad y verificabilidad criptográfica
 #[derive(Default, Debug)]
 pub struct CausalLedger {
     records: Vec<CausalRecord>,
@@ -88,7 +92,7 @@ impl CausalLedger {
         }
     }
 
-    /// Registra un nuevo efecto en el DAG causal
+    /// Registra un nuevo efecto en el Merkle-DAG causal calculando su hash criptográfico
     pub fn record_effect(
         &mut self,
         branch: BranchId,
@@ -102,6 +106,24 @@ impl CausalLedger {
         let id = EffectId(self.next_effect_id);
         self.next_effect_id += 1;
 
+        // Construir buffer para el hash Merkle del nodo
+        let mut hash_input = Vec::with_capacity(128);
+        hash_input.extend_from_slice(&id.0.to_be_bytes());
+        hash_input.extend_from_slice(&branch.0.to_be_bytes());
+        hash_input.extend_from_slice(&emitter.0.to_be_bytes());
+        hash_input.extend_from_slice(&target.0.to_be_bytes());
+        hash_input.extend_from_slice(&label.confidentiality.to_be_bytes());
+        hash_input.extend_from_slice(&label.integrity.to_be_bytes());
+        for &cause_id in &causes {
+            if let Some(parent) = self.get_effect(cause_id) {
+                hash_input.extend_from_slice(&parent.merkle_hash);
+            } else {
+                hash_input.extend_from_slice(&cause_id.0.to_be_bytes());
+            }
+        }
+        hash_input.extend_from_slice(&payload_digest);
+        let merkle_hash = hash::sha256(&hash_input);
+
         let record = CausalRecord {
             id,
             branch,
@@ -111,10 +133,38 @@ impl CausalLedger {
             reversibility,
             causes,
             payload_digest,
+            merkle_hash,
         };
 
         self.records.push(record);
         id
+    }
+
+    /// Verifica criptográficamente que ningún nodo del Merkle-DAG haya sido alterado en memoria
+    pub fn verify_merkle_integrity(&self) -> bool {
+        for record in &self.records {
+            let mut hash_input = Vec::with_capacity(128);
+            hash_input.extend_from_slice(&record.id.0.to_be_bytes());
+            hash_input.extend_from_slice(&record.branch.0.to_be_bytes());
+            hash_input.extend_from_slice(&record.emitter.0.to_be_bytes());
+            hash_input.extend_from_slice(&record.target.0.to_be_bytes());
+            hash_input.extend_from_slice(&record.label.confidentiality.to_be_bytes());
+            hash_input.extend_from_slice(&record.label.integrity.to_be_bytes());
+            for &cause_id in &record.causes {
+                if let Some(parent) = self.get_effect(cause_id) {
+                    hash_input.extend_from_slice(&parent.merkle_hash);
+                } else {
+                    hash_input.extend_from_slice(&cause_id.0.to_be_bytes());
+                }
+            }
+            hash_input.extend_from_slice(&record.payload_digest);
+            let expected_hash = hash::sha256(&hash_input);
+
+            if record.merkle_hash != expected_hash {
+                return false;
+            }
+        }
+        true
     }
 
     /// Obtiene un efecto por su identificador
@@ -308,5 +358,46 @@ mod tests {
         assert_eq!(released[0].effect_id, EffectId(200));
         assert_eq!(released[0].payload, vec![0xFF]);
         assert_eq!(escrow.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_merkle_dag_integrity_and_tamper_detection() {
+        let mut ledger = CausalLedger::new();
+        let branch = BranchId(0);
+        let domain_a = DomainId(1);
+        let domain_b = DomainId(2);
+
+        let e1 = ledger.record_effect(
+            branch, domain_a, domain_b, vec![],
+            SecurityLabel::TRUSTED_KERNEL,
+            Reversibility::PurelyReversible,
+            [1u8; 32],
+        );
+
+        let e2 = ledger.record_effect(
+            branch, domain_b, domain_a, vec![e1],
+            SecurityLabel::TRUSTED_KERNEL,
+            Reversibility::PurelyReversible,
+            [2u8; 32],
+        );
+
+        // 1. Integridad inicial verificada
+        assert!(ledger.verify_merkle_integrity(), "El Merkle-DAG debe ser valido");
+        assert_ne!(ledger.get_effect(e1).unwrap().merkle_hash, [0u8; 32]);
+        assert_ne!(ledger.get_effect(e2).unwrap().merkle_hash, [0u8; 32]);
+        assert_ne!(
+            ledger.get_effect(e1).unwrap().merkle_hash,
+            ledger.get_effect(e2).unwrap().merkle_hash,
+            "Nodos distintos deben tener hashes Merkle distintos"
+        );
+
+        // 2. Simular alteración maliciosa en memoria de un nodo anterior
+        ledger.records[0].payload_digest[0] ^= 0xFF; // Modificar 1 bit del payload e1
+
+        // 3. La verificación criptográfica del Merkle-DAG debe detectar el ataque
+        assert!(
+            !ledger.verify_merkle_integrity(),
+            "La alteracion debe ser detectada inmediatamente por el Merkle-DAG"
+        );
     }
 }

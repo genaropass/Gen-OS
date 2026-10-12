@@ -136,3 +136,76 @@ impl LimineMemmapRequest {
     }
 }
 
+#[repr(C)]
+pub struct LimineFramebuffer {
+    pub address: *mut u8,
+    pub width: u64,
+    pub height: u64,
+    pub pitch: u64,
+    pub bpp: u16,
+    pub memory_model: u8,
+    pub red_mask_size: u8,
+    pub red_mask_shift: u8,
+    pub green_mask_size: u8,
+    pub green_mask_shift: u8,
+    pub blue_mask_size: u8,
+    pub blue_mask_shift: u8,
+}
+
+#[repr(C)]
+pub struct LimineFramebufferResponse {
+    pub revision: u64,
+    pub framebuffer_count: u64,
+    pub framebuffers: *const *const LimineFramebuffer,
+}
+
+impl LimineFramebufferResponse {
+    pub fn first_framebuffer(&self) -> Option<&'static LimineFramebuffer> {
+        if self.framebuffer_count == 0 || self.framebuffers.is_null() {
+            None
+        } else {
+            unsafe {
+                let ptr = *self.framebuffers;
+                if ptr.is_null() {
+                    None
+                } else {
+                    Some(&*ptr)
+                }
+            }
+        }
+    }
+}
+
+#[repr(C)]
+pub struct LimineFramebufferRequest {
+    pub id: [u64; 4],
+    pub revision: u64,
+    pub response: *const LimineFramebufferResponse,
+}
+
+unsafe impl Sync for LimineFramebufferRequest {}
+
+impl LimineFramebufferRequest {
+    pub const fn new() -> Self {
+        Self {
+            id: [
+                0xc7b1dd30df4c8b88,
+                0x0a82e883a194f07b,
+                0x9d5827dcd881dd75,
+                0xa3148604f6fab11b,
+            ],
+            revision: 0,
+            response: core::ptr::null(),
+        }
+    }
+
+    pub fn get_response(&self) -> Option<&LimineFramebufferResponse> {
+        if self.response.is_null() {
+            None
+        } else {
+            unsafe { Some(&*self.response) }
+        }
+    }
+}
+
+

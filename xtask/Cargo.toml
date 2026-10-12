@@ -2,6 +2,12 @@
 name = "xtask"
 version = "0.1.0"
 edition = "2021"
-description = "Herramienta de automatización y orquestación de build/run/test para AgentOS"
+description = "Herramienta de automatización, demo y orquestación para AgentOS"
 
 [dependencies]
+causal-core = { path = "../crates/causal-core" }
+capability-engine = { path = "../crates/capability-engine" }
+agent-runtime = { path = "../crates/agent-runtime" }
+semantic-fs = { path = "../crates/semantic-fs" }
+agent-scheduler = { path = "../crates/agent-scheduler" }
+agent-vm = { path = "../crates/agent-vm" }
