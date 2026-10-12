@@ -107,6 +107,12 @@ impl SecurityLabel {
 }
 
 pub mod hash;
+pub mod pqc;
+
+pub use pqc::{
+    CausalMembershipProof, MerkleProofStep, PqcKeyPair, PqcPublicKey, PqcSignature,
+    QuantumResistantCipher,
+};
 
 /// Registro atómico de un Efecto en el Libro Mayor Causal (Nodo del Merkle-DAG v2)
 #[derive(Clone, Debug, PartialEq)]
@@ -127,6 +133,28 @@ pub struct CausalRecord {
     pub previous_record_hash: [u8; 32],
     /// Hash criptográfico Merkle (sella id, procedencia, causas, capacidades, label, prev_hash y payload)
     pub merkle_hash: [u8; 32],
+    /// Firma digital poscuántica WOTS+ (opcional para acciones críticas)
+    pub pqc_signature: Option<PqcSignature>,
+    /// Clave pública poscuántica del agente o entidad firmante
+    pub signer_pubkey: Option<PqcPublicKey>,
+}
+
+impl CausalRecord {
+    /// Firma este registro causal con una clave poscuántica WOTS+
+    pub fn sign_pqc(&mut self, keypair: &PqcKeyPair) {
+        let sig = keypair.sign(&self.merkle_hash);
+        self.pqc_signature = Some(sig);
+        self.signer_pubkey = Some(keypair.public_key());
+    }
+
+    /// Verifica la firma poscuántica WOTS+ del registro causal
+    pub fn verify_pqc(&self) -> bool {
+        match (&self.pqc_signature, &self.signer_pubkey) {
+            (Some(sig), Some(pk)) => pk.verify(&self.merkle_hash, sig),
+            (None, None) => true, // Sin firma requerida
+            _ => false,           // Estado inconsistente
+        }
+    }
 }
 
 /// El Libro Mayor Causal (Causal Ledger v2)
@@ -254,6 +282,8 @@ impl CausalLedger {
             payload_digest,
             previous_record_hash: prev_hash,
             merkle_hash,
+            pqc_signature: None,
+            signer_pubkey: None,
         };
 
         self.records.push(record);
@@ -381,6 +411,109 @@ impl CausalLedger {
         }
 
         ancestry
+    }
+
+    /// Registra un efecto y lo firma atómicamente con una clave poscuántica WOTS+
+    pub fn record_effect_signed(
+        &mut self,
+        branch: BranchId,
+        emitter: DomainId,
+        target: DomainId,
+        causes: Vec<EffectId>,
+        used_capabilities: Vec<u64>,
+        label: SecurityLabel,
+        reversibility: Reversibility,
+        payload_digest: [u8; 32],
+        keypair: &PqcKeyPair,
+    ) -> EffectId {
+        let effect_id = self.record_effect_with_caps(
+            branch,
+            emitter,
+            target,
+            causes,
+            used_capabilities,
+            label,
+            reversibility,
+            payload_digest,
+        );
+
+        if let Some(record) = self.records.last_mut() {
+            record.sign_pqc(keypair);
+        }
+
+        effect_id
+    }
+
+    /// Calcula la raíz del estado global de Merkle de todos los registros en el ledger
+    pub fn compute_state_root(&self) -> [u8; 32] {
+        if self.records.is_empty() {
+            return [0u8; 32];
+        }
+
+        let mut current_level: Vec<[u8; 32]> = self.records.iter().map(|r| r.merkle_hash).collect();
+
+        while current_level.len() > 1 {
+            if current_level.len() % 2 != 0 {
+                let last = *current_level.last().unwrap();
+                current_level.push(last);
+            }
+
+            let mut next_level = Vec::with_capacity(current_level.len() / 2);
+            for chunk in current_level.chunks(2) {
+                let mut input = [0u8; 64];
+                input[0..32].copy_from_slice(&chunk[0]);
+                input[32..64].copy_from_slice(&chunk[1]);
+                next_level.push(hash::sha256(&input));
+            }
+            current_level = next_level;
+        }
+
+        current_level[0]
+    }
+
+    /// Genera una prueba de inclusión verificable de conocimiento cero (CausalMembershipProof)
+    pub fn generate_membership_proof(&self, id: EffectId) -> Option<pqc::CausalMembershipProof> {
+        let target_idx = self.records.iter().position(|r| r.id == id)?;
+        let record_hash = self.records[target_idx].merkle_hash;
+        let root_hash = self.compute_state_root();
+
+        let mut current_level: Vec<[u8; 32]> = self.records.iter().map(|r| r.merkle_hash).collect();
+        let mut idx = target_idx;
+        let mut audit_path = Vec::new();
+
+        while current_level.len() > 1 {
+            if current_level.len() % 2 != 0 {
+                let last = *current_level.last().unwrap();
+                current_level.push(last);
+            }
+
+            let is_right = (idx % 2) != 0;
+            let sibling_idx = if is_right { idx - 1 } else { idx + 1 };
+            let sibling_hash = current_level[sibling_idx];
+
+            audit_path.push(pqc::MerkleProofStep {
+                is_left: is_right,
+                sibling_hash,
+            });
+
+            let mut next_level = Vec::with_capacity(current_level.len() / 2);
+            for chunk in current_level.chunks(2) {
+                let mut input = [0u8; 64];
+                input[0..32].copy_from_slice(&chunk[0]);
+                input[32..64].copy_from_slice(&chunk[1]);
+                next_level.push(hash::sha256(&input));
+            }
+
+            idx /= 2;
+            current_level = next_level;
+        }
+
+        Some(pqc::CausalMembershipProof {
+            effect_id: id,
+            record_hash,
+            root_hash,
+            audit_path,
+        })
     }
 }
 
@@ -627,4 +760,69 @@ mod tests {
         ledger.records[1].previous_record_hash = [0u8; 32];
         assert!(!ledger.verify_merkle_integrity(), "Debe detectar ruptura del encadenamiento lineal");
     }
+
+    #[test]
+    fn test_causal_record_pqc_signing_and_verification() {
+        let mut ledger = CausalLedger::new();
+        let keypair = PqcKeyPair::from_seed([0x77u8; 32]);
+
+        let e1 = ledger.record_effect_signed(
+            BranchId(0),
+            DomainId(1),
+            DomainId(2),
+            vec![],
+            vec![42],
+            SecurityLabel::TRUSTED_KERNEL,
+            Reversibility::PurelyReversible,
+            [0x88; 32],
+            &keypair,
+        );
+
+        let record = ledger.get_effect(e1).unwrap();
+        assert!(record.pqc_signature.is_some());
+        assert!(record.signer_pubkey.is_some());
+        assert!(record.verify_pqc(), "La firma poscuantica WOTS+ debe ser valida");
+
+        // Simular intento de falsificación (tampering)
+        let mut forged_record = record.clone();
+        forged_record.merkle_hash[0] ^= 0x01; // Alterar el hash firmado
+        assert!(
+            !forged_record.verify_pqc(),
+            "Un registro con hash alterado debe fallar la verificacion poscuantica"
+        );
+    }
+
+    #[test]
+    fn test_causal_ledger_state_root_and_membership_proof() {
+        let mut ledger = CausalLedger::new();
+        let branch = BranchId(0);
+
+        let e1 = ledger.record_effect(
+            branch, DomainId(1), DomainId(2), vec![],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [1u8; 32],
+        );
+        let e2 = ledger.record_effect(
+            branch, DomainId(2), DomainId(3), vec![e1],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [2u8; 32],
+        );
+        let _e3 = ledger.record_effect(
+            branch, DomainId(3), DomainId(4), vec![e2],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [3u8; 32],
+        );
+
+        let state_root = ledger.compute_state_root();
+        assert_ne!(state_root, [0u8; 32]);
+
+        // Generar prueba de inclusión para e2
+        let proof = ledger.generate_membership_proof(e2).expect("Debe existir la prueba de membresia");
+        assert_eq!(proof.effect_id, e2);
+        assert_eq!(proof.root_hash, state_root);
+        assert!(proof.verify(), "La prueba de membresia generada debe ser valida contra state_root");
+
+        // Falsificación de prueba: alterar root_hash
+        let mut fake_proof = proof.clone();
+        fake_proof.root_hash[0] ^= 0xFF;
+        assert!(!fake_proof.verify(), "Prueba con root_hash falso debe ser rechazada");
+    }
 }
+
