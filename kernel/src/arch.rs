@@ -1,4 +1,7 @@
-//! Operaciones de arquitectura x86-64 a bajo nivel (I/O ports y control de CPU)
+//! Operaciones de arquitectura x86-64 a bajo nivel (I/O ports, PIC, PIT y control de CPU)
+
+pub mod pic;
+pub mod pit;
 
 use core::arch::asm;
 
@@ -24,6 +27,24 @@ pub unsafe fn inb(port: u16) -> u8 {
         options(nomem, nostack, preserves_flags)
     );
     val
+}
+
+/// Espera un ciclo de bus de E/S escribiendo a un puerto de diagnósticos libre
+#[inline]
+pub unsafe fn io_wait() {
+    outb(0x80, 0);
+}
+
+/// Habilita las interrupciones de hardware en la CPU (sti)
+#[inline]
+pub unsafe fn sti() {
+    asm!("sti", options(nomem, nostack, preserves_flags));
+}
+
+/// Deshabilita las interrupciones de hardware en la CPU (cli)
+#[inline]
+pub unsafe fn cli() {
+    asm!("cli", options(nomem, nostack, preserves_flags));
 }
 
 /// Suspende el procesador hasta la próxima interrupción

@@ -6,6 +6,7 @@ members = [
     "crates/semantic-fs",
     "crates/agent-scheduler",
     "crates/agent-vm",
+    "crates/agent-ipc",
     "kernel",
     "xtask",
 ]
@@ -16,6 +17,7 @@ default-members = [
     "crates/semantic-fs",
     "crates/agent-scheduler",
     "crates/agent-vm",
+    "crates/agent-ipc",
     "xtask",
 ]
 resolver = "2"

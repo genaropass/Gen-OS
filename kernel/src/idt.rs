@@ -107,6 +107,18 @@ pub extern "C" fn rust_interrupt_handler(frame: &mut InterruptStackFrame) {
             println!("RIP causante: 0x{:016x}, Flags error: 0x{:x}", frame.rip, frame.error_code);
             crate::arch::hlt_loop();
         }
+        32 => {
+            crate::arch::pit::on_timer_tick();
+            unsafe {
+                crate::arch::pic::send_eoi(0);
+            }
+        }
+        36 => {
+            crate::serial::on_serial_rx();
+            unsafe {
+                crate::arch::pic::send_eoi(4);
+            }
+        }
         128 => {
             let ret = crate::syscall::dispatch_syscall(
                 frame.rax,
@@ -131,6 +143,8 @@ extern "C" {
     fn isr_8();
     fn isr_13();
     fn isr_14();
+    fn isr_32();
+    fn isr_36();
     fn isr_128();
 }
 
@@ -204,6 +218,20 @@ global_asm!(
         push 14
         jmp isr_common
 
+    /* IRQ 0 - Hardware PIT Timer (Vector 32) */
+    .global isr_32
+    isr_32:
+        push 0
+        push 32
+        jmp isr_common
+
+    /* IRQ 4 - COM1 Serial RX (Vector 36) */
+    .global isr_36
+    isr_36:
+        push 0
+        push 36
+        jmp isr_common
+
     /* Syscall software interrupt (vector 128 / 0x80) */
     .global isr_128
     isr_128:
@@ -222,6 +250,8 @@ pub fn init() {
         IDT[8].set_handler(isr_8 as *const () as usize, 1);
         IDT[13].set_handler(isr_13 as *const () as usize, 0);
         IDT[14].set_handler(isr_14 as *const () as usize, 0);
+        IDT[32].set_handler(isr_32 as *const () as usize, 0);
+        IDT[36].set_handler(isr_36 as *const () as usize, 0);
         IDT[128].set_handler(isr_128 as *const () as usize, 0);
 
         let descriptor = IdtDescriptor {

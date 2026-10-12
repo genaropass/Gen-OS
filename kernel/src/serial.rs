@@ -1,5 +1,6 @@
 //! Driver para el puerto serie UART 16550 (COM1 en 0x3F8)
 //! Permite diagnósticos en texto plano capturables por QEMU vía `-serial stdio`
+//! y lectura de entrada para el Shell interactivo de Ring 0.
 
 use core::fmt;
 use crate::arch::{inb, outb};
@@ -18,7 +19,7 @@ impl SerialPort {
     /// Inicializa el controlador UART 16550
     pub fn init(&self) {
         unsafe {
-            // Desactivar interrupciones
+            // Desactivar interrupciones durante configuración
             outb(self.port + 1, 0x00);
             // Habilitar DLAB (divisor baud rate)
             outb(self.port + 3, 0x80);
@@ -29,14 +30,30 @@ impl SerialPort {
             outb(self.port + 3, 0x03);
             // Activar buffers FIFO, limpiar y fijar umbral en 14 bytes
             outb(self.port + 2, 0xC7);
-            // Activar RTS, DTR y línea de salida auxiliar
+            // Activar RTS, DTR y línea de salida auxiliar OUT2 (habilita IRQs)
             outb(self.port + 4, 0x0B);
+            // Habilitar interrupciones de datos recibidos (IER bit 0)
+            outb(self.port + 1, 0x01);
         }
     }
 
     /// Comprueba si el buffer de transmisión está vacío y listo para enviar
     fn is_transmit_empty(&self) -> bool {
         unsafe { (inb(self.port + 5) & 0x20) != 0 }
+    }
+
+    /// Comprueba si hay datos listos en el buffer de recepción (LSR bit 0)
+    pub fn is_data_ready(&self) -> bool {
+        unsafe { (inb(self.port + 5) & 0x01) != 0 }
+    }
+
+    /// Lee un byte si está disponible en el buffer
+    pub fn read_byte(&self) -> Option<u8> {
+        if self.is_data_ready() {
+            Some(unsafe { inb(self.port) })
+        } else {
+            None
+        }
     }
 
     /// Envía un byte individual por el puerto serie
@@ -68,6 +85,20 @@ impl fmt::Write for SerialPort {
 }
 
 pub static SERIAL1: SerialPort = SerialPort::new(COM1);
+
+/// Invocado por el manejador de interrupciones de IDT (IRQ 4 / Vector 36)
+pub fn on_serial_rx() {
+    while let Some(b) = SERIAL1.read_byte() {
+        crate::shell::handle_char(b);
+    }
+}
+
+/// Sondeo activo de entrada en caso de interrupciones enmascaradas
+pub fn poll_input() {
+    while let Some(b) = SERIAL1.read_byte() {
+        crate::shell::handle_char(b);
+    }
+}
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {

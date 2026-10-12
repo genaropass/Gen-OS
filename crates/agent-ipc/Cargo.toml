@@ -1,0 +1,17 @@
+[package]
+name = "agent-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "Inter-Agent IPC Message Bus con control de capacidades, IFC y procedencia causal para AgentOS"
+
+[features]
+default = ["std"]
+std = [
+    "causal-core/std",
+    "capability-engine/std",
+]
+
+[dependencies]
+causal-core = { path = "../causal-core", default-features = false }
+capability-engine = { path = "../capability-engine", default-features = false }
+agent-runtime = { path = "../agent-runtime" }

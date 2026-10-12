@@ -12,6 +12,9 @@ use semantic_fs::{BranchFs, SemanticMetadata};
 use agent_scheduler::{CausalScheduler, TaskDescriptor, TaskId, ResourceBudget};
 use agent_vm::{AgentVm, Opcode, Value};
 
+pub mod bench;
+pub mod shell;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("build");
@@ -40,8 +43,14 @@ fn main() {
         "demo" => {
             run_live_demo();
         }
+        "shell" => {
+            shell::run_interactive_shell();
+        }
+        "bench" => {
+            bench::run_benchmarks();
+        }
         _ => {
-            eprintln!("Uso: cargo xtask [build | build-test | run | test | demo]");
+            eprintln!("Uso: cargo xtask [build | build-test | run | test | demo | shell | bench]");
             std::process::exit(1);
         }
     }
@@ -150,7 +159,7 @@ fn run_qemu(test_mode: bool) {
     }
 }
 
-fn run_live_demo() {
+pub fn run_live_demo() {
     println!("\x1b[1;36m");
     println!("========================================================================");
     println!("   ___                    _    ___  ____  ");

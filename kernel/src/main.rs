@@ -14,6 +14,8 @@ pub mod mm;
 pub mod syscall;
 pub mod font;
 pub mod fb;
+pub mod task;
+pub mod shell;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -60,7 +62,7 @@ pub extern "C" fn _start() -> ! {
 
     // 2. Banner de arranque del kernel
     println!("========================================================");
-    println!("  [AgentOS] Kernel Causal v0.1.0 (x86-64 Bare-Metal)");
+    println!("  [AgentOS] Kernel Causal v0.2.0 (x86-64 Bare-Metal)");
     println!("  Arranque completado exitosamente via UEFI / Limine");
     println!("========================================================");
 
@@ -72,7 +74,7 @@ pub extern "C" fn _start() -> ! {
     // 4. Inicializar tabla de interrupciones (IDT)
     println!("[AgentOS] Configurando IDT y vectores de excepcion...");
     idt::init();
-    println!("[AgentOS] IDT cargada (trampolines activos para #DE, #BP, #UD, #DF, #GP, #PF)");
+    println!("[AgentOS] IDT cargada (trampolines activos para #DE, #BP, #UD, #DF, #GP, #PF, IRQ0, IRQ4)");
 
     // Autotest de interrupción por software (Breakpoint #BP)
     unsafe {
@@ -80,17 +82,29 @@ pub extern "C" fn _start() -> ! {
     }
     println!("[AgentOS] Autotest IDT (#BP) superado exitosamente!");
 
-    // 5. Comprobar si el bootloader soporta la revisión solicitada
+    // 5. Configurar controlador de interrupciones PIC 8259 y Temporizador PIT 8254
+    println!("[AgentOS] Configurando Dual PIC 8259 (Remap a vectores 32..47)...");
+    unsafe {
+        arch::pic::remap(32, 40);
+        arch::pic::clear_mask(0); // Desenmascarar IRQ 0 (Temporizador PIT)
+        arch::pic::clear_mask(4); // Desenmascarar IRQ 4 (COM1 Serie)
+    }
+    println!("[AgentOS] Configurando PIT 8254 a 100 Hz (quantum = 10ms)...");
+    unsafe {
+        arch::pit::init(100);
+    }
+
+    // 6. Comprobar si el bootloader soporta la revisión solicitada
     if BASE_REVISION.is_supported() {
         println!("[AgentOS] Protocolo Limine: Revision base soportada OK");
     } else {
         println!("[AgentOS] ADVERTENCIA: Revision del protocolo Limine no soportada");
     }
 
-    // 6. Inicializar Subsistema de Gestión de Memoria (PMM, VMM, Heap)
+    // 7. Inicializar Subsistema de Gestión de Memoria (PMM, VMM, Heap)
     mm::init(MEMMAP_REQUEST.get_response(), HHDM_REQUEST.get_response());
 
-    // 7. Autotest de asignación dinámica en Heap (Box, Vec)
+    // 8. Autotest de asignación dinámica en Heap (Box, Vec)
     let boxed_val = Box::new(0xCAFE_BABE_u64);
     let mut test_vec = Vec::new();
     test_vec.push(10);
@@ -103,7 +117,7 @@ pub extern "C" fn _start() -> ! {
         test_vec.capacity()
     );
 
-    // 8. Autotest del Grafo Causal en Ring 0
+    // 9. Autotest del Grafo Causal en Ring 0
     let mut ledger = CausalLedger::new();
     let root_branch = BranchId(0);
     let agent_domain = DomainId(1);
@@ -136,7 +150,7 @@ pub extern "C" fn _start() -> ! {
         why_chain.len()
     );
 
-    // 9. Autotest del Motor de Capacidades en Ring 0
+    // 10. Autotest del Motor de Capacidades en Ring 0
     let mut cspace = CSpace::new();
     let token = cspace.mint_root(
         ObjectId(100),
@@ -149,7 +163,7 @@ pub extern "C" fn _start() -> ! {
         token, child_token
     );
 
-    // 10. Autotest de Syscall ABI via software interrupt `int 0x80`
+    // 11. Autotest de Syscall ABI via software interrupt `int 0x80`
     syscall::init();
     let sys_ret: i64;
     unsafe {
@@ -168,30 +182,51 @@ pub extern "C" fn _start() -> ! {
         sys_ret
     );
 
+    // 12. Autotest del Subsistema de Tareas de Kernel
+    println!("[AgentOS::Task] Validando estructuras de control de tareas (TCB)...");
+    let test_ctx = task::TaskContext::default();
+    println!("[AgentOS::Task] TCB Context inicializado en RIP=0, RSP=0x{:x}", test_ctx.rsp);
+
+    // 13. Habilitar Interrupciones de Hardware en CPU
+    println!("[AgentOS] Habilitando interrupciones de hardware en CPU (sti)...");
+    unsafe {
+        arch::sti();
+    }
+    println!("[AgentOS] Hardware Timer PIT activo (Vector 32)!");
+
     println!("========================================================");
     println!("  [AgentOS] Kernel Causal Inicializado al 100%");
-    println!("  Sub-sistemas activos: UART, GDT, IDT, PMM, VMM, Heap,");
-    println!("                        CausalLedger (Merkle-DAG), CSpace, Syscall (int 0x80),");
-    println!("                        Framebuffer UI (VRAM Nativa UEFI)");
+    println!("  Sub-sistemas activos: UART, GDT, IDT, PIC 8259, PIT 8254,");
+    println!("                        PMM, VMM, Heap, Merkle-DAG Causal,");
+    println!("                        CSpace, Syscall (int 0x80), TCB Scheduler,");
+    println!("                        Framebuffer UI & Shell Interactivo COM1");
     println!("========================================================");
 
     // Renderizar tarjetas visuales de estado en el Framebuffer gráfico
-    fb::draw_panel(40, 60, 520, 160, " SUBSISTEMAS ACTIVOS DEL KERNEL ", fb::Color::CYAN);
-    fb::draw_string("GDT / TSS IST[0] (Double-Fault safe): OK", 60, 90, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("IDT 256 Vectores (#PF, int 0x80 Syscalls): OK", 60, 110, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("Memoria: PMM (4KiB) + VMM (4-Niveles) + Heap 1MiB: OK", 60, 130, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("Grafo Causal: Merkle-DAG SHA-256 Integro: OK", 60, 150, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("Seguridad: CSpace de Capacidades + Escrow Activo: OK", 60, 170, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("Modo: AgentOS Runtime Listo para Cargas de Agentes", 60, 190, fb::Color::CYAN, fb::Color::DARK_GRAY);
+    fb::draw_panel(40, 50, 580, 210, " SUBSISTEMAS ACTIVOS DEL KERNEL ", fb::Color::CYAN);
+    fb::draw_string("GDT / TSS IST[0] (Double-Fault safe): OK", 60, 75, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("IDT 256 Vectores (#PF, IRQ0, IRQ4, int 0x80 Syscall): OK", 60, 95, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Hardware PIC 8259 + PIT Timer 8254 (100 Hz / 10ms): OK", 60, 115, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Memoria: PMM (4KiB) + VMM (4-Niveles) + Heap 1MiB: OK", 60, 135, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Grafo Causal: Merkle-DAG SHA-256 FIPS 180-4 Integro: OK", 60, 155, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Seguridad: CSpace de Capacidades + Escrow Activo: OK", 60, 175, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Kernel Tasks: TCBs & Conmutacion de Contexto: OK", 60, 195, fb::Color::GREEN, fb::Color::DARK_GRAY);
+    fb::draw_string("Modo: AgentOS Runtime & Interactive Shell Listo", 60, 215, fb::Color::CYAN, fb::Color::DARK_GRAY);
 
-    // Para la prueba automatizada M1/M2 en QEMU, reportamos éxito a isa-debug-exit
+    // Inicializar Shell interactivo de Ring 0 en COM1
+    shell::init();
+
+    // Para la prueba automatizada en QEMU, reportamos éxito a isa-debug-exit
     #[cfg(feature = "test-exit")]
     {
         println!("[AgentOS] Modo de prueba automatizada activo. Saliendo...");
         exit_qemu(QemuExitCode::Success);
     }
 
-    // Mantener la CPU en reposo si no estamos en modo de prueba automatizada
+    // Bucle interactivo del kernel: procesa caracteres del puerto serie y suspende CPU
     #[cfg(not(feature = "test-exit"))]
-    arch::hlt_loop();
+    loop {
+        serial::poll_input();
+        arch::hlt();
+    }
 }

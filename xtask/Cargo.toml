@@ -11,3 +11,4 @@ agent-runtime = { path = "../crates/agent-runtime" }
 semantic-fs = { path = "../crates/semantic-fs" }
 agent-scheduler = { path = "../crates/agent-scheduler" }
 agent-vm = { path = "../crates/agent-vm" }
+agent-ipc = { path = "../crates/agent-ipc" }
