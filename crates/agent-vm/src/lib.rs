@@ -8,9 +8,16 @@
 //! 3. Instrucciones de ramificación especulativa en el Multiverso (`ForkBranch`, `CommitBranch`, `AbortBranch`).
 //! 4. Invocación de herramientas protegidas por Escrow y seguimiento de taint IFC (`Observe`, `InvokeTool`).
 
+pub mod wasm;
+
 use causal_core::{BranchId, SecurityLabel, EffectId};
 use capability_engine::{ObjectId, Permissions};
 use agent_runtime::{AgentInstance, AgentSupervisor, ToolRegistry, ToolExecutionResult};
+
+pub use wasm::{
+    WasmModule, WasmInstance, WasmError, WasmFunction, WasmInstruction,
+    WasmBinaryBuilder, WASM_MAGIC, WASM_PAGE_SIZE, WASM_VERSION,
+};
 
 /// Valores primitivos operables dentro de la AVM
 #[derive(Clone, Debug, PartialEq)]
