@@ -16,6 +16,7 @@ pub mod multiverse;
 pub mod transaction;
 pub mod mcp;
 pub mod net;
+pub mod llm;
 
 pub use agent::{AgentId, AgentGoal, AgentInstance, AgentStatus};
 pub use tool::{ToolDefinition, ToolRegistry, ToolExecutionResult};
@@ -24,4 +25,10 @@ pub use multiverse::{DreamingEngine, BranchEvaluation};
 pub use transaction::{TransactionCoordinator, TransactionContext, TransactionStatus};
 pub use mcp::{McpClient, McpServer, McpTool, McpToolResult, McpError};
 pub use net::{NetGateway, HttpRequest, HttpResponse, HttpMethod, NetError};
+pub use llm::{
+    LlmEngine, MockLlmEngine, OllamaEngine, CloudLlmEngine,
+    ChatMessage, ChatResponse, ChatRole, PlannedAction, LlmError,
+    AgentReasoningLoop, ReasoningStepOutcome,
+};
+
 
