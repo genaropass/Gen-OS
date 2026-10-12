@@ -1,16 +1,22 @@
 //! Global Descriptor Table (GDT) y Task State Segment (TSS) para x86-64
+//! Configura segmentos para Ring 0 (Kernel) y Ring 3 (User/Agentes con DPL=3),
+//! así como la TSS con soporte de IST para Double Fault y `rsp[0]` para transición de privilegio.
 
 use core::arch::asm;
 use core::mem::size_of;
 
-/// Selector del segmento de código del kernel
+/// Selectores de segmento de Ring 0 (Kernel)
 pub const KERNEL_CODE_SEL: u16 = 0x08;
-/// Selector del segmento de datos del kernel
 pub const KERNEL_DATA_SEL: u16 = 0x10;
-/// Selector de la TSS
-pub const TSS_SEL: u16 = 0x18;
 
-/// Pila dedicada para el manejador de Double Fault (evita triple fault por desbordamiento de pila)
+/// Selectores de segmento de Ring 3 (User / Agentes) con RPL = 3
+pub const USER_DATA_SEL: u16 = 0x18 | 3; // 0x1B
+pub const USER_CODE_SEL: u16 = 0x20 | 3; // 0x23
+
+/// Selector de la TSS
+pub const TSS_SEL: u16 = 0x28;
+
+/// Pila dedicada para el manejador de Double Fault (IST 1)
 const DOUBLE_FAULT_STACK_SIZE: usize = 4096 * 4; // 16 KiB
 static mut DOUBLE_FAULT_STACK: [u8; DOUBLE_FAULT_STACK_SIZE] = [0; DOUBLE_FAULT_STACK_SIZE];
 
@@ -41,18 +47,34 @@ struct GdtDescriptor {
     base: u64,
 }
 
-// GDT con: Null (0), Kernel Code (0x08), Kernel Data (0x10), TSS (0x18, ocupa 16 bytes en x86-64)
-static mut GDT: [u64; 5] = [
+// GDT de 7 entradas:
+// 0x00: Null
+// 0x08: Kernel Code 64-bit (Ring 0, RX)
+// 0x10: Kernel Data 64-bit (Ring 0, RW)
+// 0x18: User Data 64-bit   (Ring 3, RW, DPL=3)
+// 0x20: User Code 64-bit   (Ring 3, RX, DPL=3)
+// 0x28: TSS Low (16 bytes en x86-64)
+// 0x30: TSS High
+static mut GDT: [u64; 7] = [
     0,                                      // 0x00: Null
-    0x00af9a000000ffff,                     // 0x08: Kernel Code 64-bit (present, ring 0, exec/read, 64-bit)
-    0x00af92000000ffff,                     // 0x10: Kernel Data 64-bit (present, ring 0, read/write)
-    0,                                      // 0x18: TSS low (se rellena en tiempo de ejecución)
-    0,                                      // 0x20: TSS high
+    0x00af9a000000ffff,                     // 0x08: Kernel Code 64-bit (DPL=0)
+    0x00af92000000ffff,                     // 0x10: Kernel Data 64-bit (DPL=0)
+    0x00aff2000000ffff,                     // 0x18: User Data 64-bit (DPL=3)
+    0x00affa000000ffff,                     // 0x20: User Code 64-bit (DPL=3)
+    0,                                      // 0x28: TSS low (rellenado en init)
+    0,                                      // 0x30: TSS high
 ];
+
+/// Actualiza la pila de Ring 0 en la TSS (`rsp[0]`) para la tarea activa
+pub fn set_kernel_stack(stack_top: u64) {
+    unsafe {
+        TSS.rsp[0] = stack_top;
+    }
+}
 
 pub fn init() {
     unsafe {
-        // Configurar la pila IST[0] para Double Fault en la TSS
+        // Configurar la pila IST[0] para Double Fault en la TSS (mapea a ist 1 en IDT)
         let stack_end = (&raw const DOUBLE_FAULT_STACK) as *const u8 as u64 + DOUBLE_FAULT_STACK_SIZE as u64;
         TSS.ist[0] = stack_end;
 
@@ -60,7 +82,6 @@ pub fn init() {
         let tss_base = (&raw const TSS) as u64;
         let tss_limit = (size_of::<TaskStateSegment>() - 1) as u64;
 
-        // Descriptor TSS en x86-64 ocupa dos entradas de 64 bits (16 bytes)
         let tss_low = (tss_limit & 0xffff)
             | ((tss_base & 0x00ff_ffff) << 16)
             | (0x89u64 << 40) // Tipo: 64-bit TSS Available, Present
@@ -69,18 +90,18 @@ pub fn init() {
 
         let tss_high = tss_base >> 32;
 
-        GDT[3] = tss_low;
-        GDT[4] = tss_high;
+        GDT[5] = tss_low;
+        GDT[6] = tss_high;
 
         let descriptor = GdtDescriptor {
-            limit: (size_of::<[u64; 5]>() - 1) as u16,
+            limit: (size_of::<[u64; 7]>() - 1) as u16,
             base: (&raw const GDT) as u64,
         };
 
         // Cargar la nueva GDT
         asm!("lgdt [{}]", in(reg) &descriptor, options(readonly, nostack, preserves_flags));
 
-        // Recargar el registro de segmento de código (CS) y los de datos (DS, SS, ES)
+        // Recargar los registros de segmento CS, DS, ES, SS
         asm!(
             "push {sel}",
             "lea {tmp}, [2f + rip]",
@@ -98,6 +119,6 @@ pub fn init() {
         );
 
         // Cargar el registro de tarea (TR) con la TSS
-        asm!("ltr ax", in("ax") TSS_SEL, options(nostack, preserves_flags));
+        asm!("ltr cx", in("cx") TSS_SEL, options(nomem, nostack, preserves_flags));
     }
 }

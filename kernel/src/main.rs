@@ -19,6 +19,7 @@ pub mod sched;
 pub mod sync;
 pub mod shell;
 pub mod bench;
+pub mod loader;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;

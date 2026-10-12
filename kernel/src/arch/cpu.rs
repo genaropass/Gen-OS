@@ -103,15 +103,13 @@ pub fn clac() {
 pub fn init_cpu_security() {
     println!("[AgentOS::CPU] Evaluando caracteristicas de hardware de seguridad (CPUID)...");
 
-    // 1. Activar CR0.WP (Write Protect - bit 16)
-    let cr0 = read_cr0();
-    let wp_bit = 1 << 16;
-    if (cr0 & wp_bit) == 0 {
-        write_cr0(cr0 | wp_bit);
-        println!("  * CR0.WP (Write Protect) -> \x1b[1;32mHABILITADO\x1b[0m");
-    } else {
-        println!("  * CR0.WP (Write Protect) -> \x1b[1;32mYA ACTIVO\x1b[0m");
-    }
+    // 1. Activar CR0.WP (Write Protect - bit 16), asegurar MP (bit 1) y limpiar EM (bit 2)
+    let mut cr0 = read_cr0();
+    cr0 |= 1 << 16; // WP
+    cr0 |= 1 << 1;  // MP (Monitor Coprocessor)
+    cr0 &= !(1 << 2); // EM = 0 (No emulation of FPU)
+    write_cr0(cr0);
+    println!("  * CR0.WP (Write Protect) & FPU -> \x1b[1;32mHABILITADO\x1b[0m");
 
     // 2. Comprobar y activar EFER.NXE (No-Execute Enable - bit 11)
     let (_, _, _, ext_edx) = cpuid(0x80000001, 0);
@@ -129,13 +127,16 @@ pub fn init_cpu_security() {
         println!("  * EFER.NXE -> \x1b[1;33mNO SOPORTADO POR CPU\x1b[0m");
     }
 
-    // 3. Comprobar SMEP, SMAP y UMIP en CPUID leaf 7
+    // 3. Activar soporte de instrucciones SSE / FXSAVE / FXRSTOR en CR4
+    let mut cr4 = read_cr4();
+    cr4 |= 1 << 9;  // CR4.OSFXSR (bit 9): Soporte de FXSAVE y FXRSTOR por el S.O.
+    cr4 |= 1 << 10; // CR4.OSXMMEXCPT (bit 10): Soporte de excepciones SIMD sin máscara
+
+    // 4. Comprobar SMEP, SMAP y UMIP en CPUID leaf 7
     let (_, feat_ebx, feat_ecx, _) = cpuid(7, 0);
     let smep_supported = (feat_ebx & (1 << 7)) != 0;
     let smap_supported = (feat_ebx & (1 << 20)) != 0;
     let umip_supported = (feat_ecx & (1 << 2)) != 0;
-
-    let mut cr4 = read_cr4();
 
     if smep_supported {
         cr4 |= 1 << 20; // CR4.SMEP bit 20

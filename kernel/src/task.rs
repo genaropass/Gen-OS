@@ -27,7 +27,14 @@ pub struct FxsaveArea(pub [u8; 512]);
 
 impl Default for FxsaveArea {
     fn default() -> Self {
-        Self([0; 512])
+        let mut area = [0u8; 512];
+        // FCW = 0x037F (Standard x87 Control Word: all exceptions masked, 64-bit precision)
+        area[0] = 0x7F;
+        area[1] = 0x03;
+        // MXCSR = 0x1F80 (Standard SSE Control/Status Word: all SIMD exceptions masked)
+        area[24] = 0x80;
+        area[25] = 0x1F;
+        Self(area)
     }
 }
 
@@ -49,14 +56,19 @@ static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_STACK_VIRT: AtomicU64 = AtomicU64::new(0xffff_ff80_1000_0000);
 
 extern "C" {
-    pub fn asm_context_switch(old_ctx: *mut TaskContext, new_ctx: *const TaskContext);
+    pub fn asm_context_switch(
+        old_ctx: *mut TaskContext,
+        new_ctx: *const TaskContext,
+        old_fxsave: *mut u8,
+        new_fxsave: *const u8,
+    );
 }
 
 global_asm!(
     r#"
     .global asm_context_switch
     asm_context_switch:
-        /* rdi = &mut old_task.context, rsi = &new_task.context */
+        /* rdi = old_ctx, rsi = new_ctx, rdx = old_fxsave, rcx = new_fxsave */
         pushfq              /* Guardar RFLAGS de la tarea saliente */
         push rbp
         push rbx
@@ -66,7 +78,15 @@ global_asm!(
         push r15
         mov [rdi], rsp      /* Guardar rsp en old_ctx.rsp */
 
+        test rdx, rdx
+        jz 1f
+        fxsave [rdx]        /* Guardar estado FPU / SSE / AVX (512 bytes alineados a 16) */
+    1:
         mov rsp, [rsi]      /* Cargar nuevo rsp desde new_ctx.rsp */
+        test rcx, rcx
+        jz 2f
+        fxrstor [rcx]       /* Restaurar estado FPU / SSE / AVX de la tarea entrante */
+    2:
         pop r15
         pop r14
         pop r13

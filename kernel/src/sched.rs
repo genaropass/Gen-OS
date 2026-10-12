@@ -86,13 +86,15 @@ pub fn yield_now() {
         sched.current = Some(next);
         sched.context_switch_count += 1;
 
-        let old_ptr = (&mut sched.ready_queue.back_mut().unwrap().context) as *mut TaskContext;
-        let new_ptr = (&sched.current.as_ref().unwrap().context) as *const TaskContext;
-        (old_ptr, new_ptr)
+        let old_ctx = (&mut sched.ready_queue.back_mut().unwrap().context) as *mut TaskContext;
+        let new_ctx = (&sched.current.as_ref().unwrap().context) as *const TaskContext;
+        let old_fx = sched.ready_queue.back_mut().unwrap().fxsave.0.as_mut_ptr();
+        let new_fx = sched.current.as_ref().unwrap().fxsave.0.as_ptr();
+        (old_ctx, new_ctx, old_fx, new_fx)
     };
 
     unsafe {
-        asm_context_switch(switch_data.0, switch_data.1);
+        asm_context_switch(switch_data.0, switch_data.1, switch_data.2, switch_data.3);
     }
 }
 
