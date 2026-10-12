@@ -11,7 +11,7 @@ use crate::println;
 
 /// Inicializa todos los componentes del subsistema de memoria
 pub fn init(memmap: Option<&LimineMemmapResponse>, hhdm: Option<&LimineHhdmResponse>) {
-    println!("[AgentOS::MM] Inicializando subsistema de gestion de memoria...");
+    println!("[GenOS::MM] Inicializando subsistema de gestion de memoria...");
 
     let offset = hhdm.map(|h| h.offset).unwrap_or(0);
 
@@ -19,7 +19,7 @@ pub fn init(memmap: Option<&LimineMemmapResponse>, hhdm: Option<&LimineHhdmRespo
     if let Some(map) = memmap {
         frame::init(map, offset);
     } else {
-        println!("[AgentOS::MM] ADVERTENCIA: Mapa de memoria Limine no disponible en este arranque");
+        println!("[GenOS::MM] ADVERTENCIA: Mapa de memoria Limine no disponible en este arranque");
     }
 
     // 2. Diagnóstico de VMM / paginación
@@ -28,5 +28,5 @@ pub fn init(memmap: Option<&LimineMemmapResponse>, hhdm: Option<&LimineHhdmRespo
     // 3. Inicializar el montón dinámico del kernel (habilita alloc::Vec, alloc::Box, etc.)
     heap::init();
 
-    println!("[AgentOS::MM] Subsistema de memoria operativo al 100%");
+    println!("[GenOS::MM] Subsistema de memoria operativo al 100%");
 }

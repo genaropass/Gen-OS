@@ -56,7 +56,7 @@ static SHELL_STATE: IrqSpinLock<ShellBuffer> = IrqSpinLock::new(ShellBuffer::new
 /// Inicializa el Shell de Ring 0 e imprime el banner de bienvenida
 pub fn init() {
     println!("\n\x1b[1;36m========================================================");
-    println!("  AgentOS Kernel Interactive Shell (Ring 0 / COM1)");
+    println!("  GenOS Kernel Interactive Shell (Ring 0 / COM1)");
     println!("  Escribe 'help' para ver la lista de comandos disponibles.");
     println!("========================================================\x1b[0m");
     print_prompt();
@@ -64,7 +64,7 @@ pub fn init() {
 
 /// Imprime el prompt interactivo del kernel
 pub fn print_prompt() {
-    print!("\x1b[1;32mAgentOS-Ring0# \x1b[0m");
+    print!("\x1b[1;32mGenOS-Ring0# \x1b[0m");
 }
 
 /// Procesa un byte de entrada recibido por el puerto serie
@@ -106,7 +106,7 @@ fn execute_command(cmd: &str) {
 
     match command {
         "help" => {
-            println!("\x1b[1;33mComandos disponibles en el Kernel de AgentOS:\x1b[0m");
+            println!("\x1b[1;33mComandos disponibles en el Kernel de GenOS:\x1b[0m");
             println!("  help         - Muestra este menú de ayuda");
             println!("  status       - Muestra el estado del sistema, ticks de PIT y uptime");
             println!("  causal       - Verifica la integridad matemática del Merkle-DAG");
@@ -120,13 +120,13 @@ fn execute_command(cmd: &str) {
         "status" => {
             let ticks = pit::ticks();
             let uptime = pit::uptime_ms();
-            println!("\x1b[1;34m[AgentOS::Telemetry]\x1b[0m");
+            println!("\x1b[1;34m[GenOS::Telemetry]\x1b[0m");
             println!("  Uptime: {} ms ({} ticks de hardware PIT)", uptime, ticks);
             println!("  Arquitectura: x86-64 Higher-Half (Ring 0)");
             println!("  Modo de ejecución: Microkernel Causal Nativo");
         }
         "causal" => {
-            println!("\x1b[1;34m[AgentOS::Causal]\x1b[0m");
+            println!("\x1b[1;34m[GenOS::Causal]\x1b[0m");
             match crate::syscall::verify_kernel_ledger() {
                 Some((is_valid, pending_escrow)) => {
                     if is_valid {
@@ -142,7 +142,7 @@ fn execute_command(cmd: &str) {
             }
         }
         "mem" => {
-            println!("\x1b[1;34m[AgentOS::Memory]\x1b[0m");
+            println!("\x1b[1;34m[GenOS::Memory]\x1b[0m");
             let (frames_alloc, bytes_usable) = crate::mm::frame::pmm_stats();
             let (heap_alloc, heap_free) = crate::mm::heap::heap_stats();
             println!("  PMM: {} marcos asignados ({} KiB), {} MiB utilizables totales",
@@ -152,15 +152,15 @@ fn execute_command(cmd: &str) {
         }
         "tasks" => {
             let (active_tasks, switches) = crate::sched::sched_stats();
-            println!("\x1b[1;34m[AgentOS::Scheduler]\x1b[0m");
+            println!("\x1b[1;34m[GenOS::Scheduler]\x1b[0m");
             println!("  Tareas activas: {}", active_tasks);
             println!("  Conmutaciones de contexto ejecutadas: {}", switches);
             println!("  Politica: Preemptive Time-slice Round-Robin (100 Hz / Quantum 100ms)");
         }
         "yield" => {
-            println!("[AgentOS::Scheduler] Cediendo CPU voluntariamente (yield_now)...");
+            println!("[GenOS::Scheduler] Cediendo CPU voluntariamente (yield_now)...");
             crate::sched::yield_now();
-            println!("[AgentOS::Scheduler] Control retomado exitosamente!");
+            println!("[GenOS::Scheduler] Control retomado exitosamente!");
         }
         "bench" => {
             crate::bench::run_kernel_benchmarks();
@@ -169,7 +169,7 @@ fn execute_command(cmd: &str) {
             print!("\x1b[2J\x1b[H");
         }
         "exit" => {
-            println!("\x1b[1;31m[AgentOS] Apagando maquina virtual via puerto isa-debug-exit...\x1b[0m");
+            println!("\x1b[1;31m[GenOS] Apagando maquina virtual via puerto isa-debug-exit...\x1b[0m");
             crate::qemu_exit::exit_qemu(crate::qemu_exit::QemuExitCode::Success);
         }
         other => {

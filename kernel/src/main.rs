@@ -62,52 +62,52 @@ pub extern "C" fn _start() -> ! {
     if let Some(fb_resp) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(fb_ptr) = fb_resp.first_framebuffer() {
             fb::init(fb_ptr);
-            fb::console_print("[AgentOS] Modo grafico UEFI activo", fb::Color::CYAN);
+            fb::console_print("[GenOS] Modo grafico UEFI activo", fb::Color::CYAN);
         }
     }
 
     // 2. Banner de arranque del kernel
     println!("========================================================");
-    println!("  [AgentOS] Kernel Causal v0.2.0 (x86-64 Bare-Metal)");
+    println!("  [GenOS] Kernel Causal v0.2.0 (x86-64 Bare-Metal)");
     println!("  Arranque completado exitosamente via UEFI / Limine");
     println!("========================================================");
 
     // 3. Inicializar segmentación (GDT) y pila IST de contingencia (TSS)
-    println!("[AgentOS] Configurando GDT y TSS...");
+    println!("[GenOS] Configurando GDT y TSS...");
     gdt::init();
-    println!("[AgentOS] GDT y TSS cargadas con exito (IST[0] activo)");
+    println!("[GenOS] GDT y TSS cargadas con exito (IST[0] activo)");
 
     // 4. Inicializar tabla de interrupciones (IDT)
-    println!("[AgentOS] Configurando IDT y vectores de excepcion...");
+    println!("[GenOS] Configurando IDT y vectores de excepcion...");
     idt::init();
-    println!("[AgentOS] IDT cargada (trampolines activos para #DE, #BP, #UD, #DF, #GP, #PF, IRQ0, IRQ4)");
+    println!("[GenOS] IDT cargada (trampolines activos para #DE, #BP, #UD, #DF, #GP, #PF, IRQ0, IRQ4)");
 
     // Autotest de interrupción por software (Breakpoint #BP)
     unsafe {
         core::arch::asm!("int3", options(nomem, nostack));
     }
-    println!("[AgentOS] Autotest IDT (#BP) superado exitosamente!");
+    println!("[GenOS] Autotest IDT (#BP) superado exitosamente!");
 
     // 4b. Activar protecciones de hardware de la CPU (CR0.WP, EFER.NXE, SMEP, SMAP, UMIP)
     arch::cpu::init_cpu_security();
 
     // 5. Configurar controlador de interrupciones PIC 8259 y Temporizador PIT 8254
-    println!("[AgentOS] Configurando Dual PIC 8259 (Remap a vectores 32..47)...");
+    println!("[GenOS] Configurando Dual PIC 8259 (Remap a vectores 32..47)...");
     unsafe {
         arch::pic::remap(32, 40);
         arch::pic::clear_mask(0); // Desenmascarar IRQ 0 (Temporizador PIT)
         arch::pic::clear_mask(4); // Desenmascarar IRQ 4 (COM1 Serie)
     }
-    println!("[AgentOS] Configurando PIT 8254 a 100 Hz (quantum = 10ms)...");
+    println!("[GenOS] Configurando PIT 8254 a 100 Hz (quantum = 10ms)...");
     unsafe {
         arch::pit::init(100);
     }
 
     // 6. Comprobar si el bootloader soporta la revisión solicitada
     if BASE_REVISION.is_supported() {
-        println!("[AgentOS] Protocolo Limine: Revision base soportada OK");
+        println!("[GenOS] Protocolo Limine: Revision base soportada OK");
     } else {
-        println!("[AgentOS] ADVERTENCIA: Revision del protocolo Limine no soportada");
+        println!("[GenOS] ADVERTENCIA: Revision del protocolo Limine no soportada");
     }
 
     // 7. Inicializar Subsistema de Gestión de Memoria (PMM, VMM, Heap)
@@ -120,14 +120,14 @@ pub extern "C" fn _start() -> ! {
     test_vec.push(20);
     test_vec.push(30);
     println!(
-        "[AgentOS::Heap] Autotest OK: Box(0x{:x}), Vec len={}, cap={}",
+        "[GenOS::Heap] Autotest OK: Box(0x{:x}), Vec len={}, cap={}",
         *boxed_val,
         test_vec.len(),
         test_vec.capacity()
     );
 
     // 8b. Autotest de Espacio de Direcciones Aislado (PML4 AddressSpace)
-    println!("[AgentOS::VMM] Validando aislamiento de AddressSpace por agente...");
+    println!("[GenOS::VMM] Validando aislamiento de AddressSpace por agente...");
     if let Some(mut user_as) = mm::address_space::AddressSpace::new() {
         let test_virt = 0x0040_0000u64;
         if let Some(frame) = mm::frame::alloc_frame() {
@@ -139,7 +139,7 @@ pub extern "C" fn _start() -> ! {
             if res.is_ok() {
                 let trans = user_as.translate(test_virt);
                 println!(
-                    "[AgentOS::VMM] AddressSpace aislado OK: Virt 0x{:08x} -> Phys 0x{:08x} (PML4: 0x{:x})",
+                    "[GenOS::VMM] AddressSpace aislado OK: Virt 0x{:08x} -> Phys 0x{:08x} (PML4: 0x{:x})",
                     test_virt, trans.unwrap_or(0), user_as.pml4_phys
                 );
             }
@@ -174,7 +174,7 @@ pub extern "C" fn _start() -> ! {
 
     let why_chain = ledger.why(e2);
     println!(
-        "[AgentOS::Causal] Autotest OK: Efecto e2={:?} depende causalmente de {} nodo(s)",
+        "[GenOS::Causal] Autotest OK: Efecto e2={:?} depende causalmente de {} nodo(s)",
         e2,
         why_chain.len()
     );
@@ -188,7 +188,7 @@ pub extern "C" fn _start() -> ! {
     );
     let child_token = cspace.derive(token, Permissions::READ, 2).expect("Derivacion valida");
     println!(
-        "[AgentOS::CapEngine] Autotest OK: Token padre {:?} derivo token hijo {:?}",
+        "[GenOS::CapEngine] Autotest OK: Token padre {:?} derivo token hijo {:?}",
         token, child_token
     );
 
@@ -207,7 +207,7 @@ pub extern "C" fn _start() -> ! {
         );
     }
     println!(
-        "[AgentOS::Syscall] Autotest int 0x80 exitoso: SYS_EFFECT_LOG retorno effect_id={}",
+        "[GenOS::Syscall] Autotest int 0x80 exitoso: SYS_EFFECT_LOG retorno effect_id={}",
         sys_ret
     );
 
@@ -224,7 +224,7 @@ pub extern "C" fn _start() -> ! {
     if let Ok(spawned_id) = agent::spawn_agent(agent_manifest, &mut ledger) {
         let budget = agent::query_budget(spawned_id).unwrap();
         println!(
-            "[AgentOS::Agent] Autotest OK: Agente nativo ID={} instanciado (Gas={}/{}, Estado=Ready)",
+            "[GenOS::Agent] Autotest OK: Agente nativo ID={} instanciado (Gas={}/{}, Estado=Ready)",
             spawned_id.0, budget.gas_units, budget.max_gas_units
         );
         let _ = agent::suspend_agent(spawned_id);
@@ -234,30 +234,30 @@ pub extern "C" fn _start() -> ! {
     // 11c. Inicializar Almacenamiento Persistente en Bloque (VirtIO-Blk / Ramdisk)
     drivers::virtio_blk::init();
     let mut test_sector = [0u8; 512];
-    test_sector[0..16].copy_from_slice(b"AGENTOS_BLOCK_OK");
+    test_sector[0..16].copy_from_slice(b"GENOS_BLOCK_OK__");
     let _ = drivers::virtio_blk::write_sector(0, &test_sector);
     let mut read_back = [0u8; 512];
     if drivers::virtio_blk::read_sector(0, &mut read_back).is_ok() {
-        println!("[AgentOS::Storage] Autotest lectura/escritura sector 0 LBA exitoso");
+        println!("[GenOS::Storage] Autotest lectura/escritura sector 0 LBA exitoso");
     }
 
     // 11d. Inicializar Controlador de Red (VirtIO-Net / Loopback)
     drivers::virtio_net::init();
 
     // 12. Inicializar Planificador Preemptivo de Ring 0
-    println!("[AgentOS::Sched] Inicializando planificador preemptivo de Ring 0...");
+    println!("[GenOS::Sched] Inicializando planificador preemptivo de Ring 0...");
     sched::init();
     sched::spawn("agent_causal_monitor", agent_causal_worker);
 
     // 13. Habilitar Interrupciones de Hardware en CPU
-    println!("[AgentOS] Habilitando interrupciones de hardware en CPU (sti)...");
+    println!("[GenOS] Habilitando interrupciones de hardware en CPU (sti)...");
     unsafe {
         arch::sti();
     }
-    println!("[AgentOS] Hardware Timer PIT activo (Vector 32)!");
+    println!("[GenOS] Hardware Timer PIT activo (Vector 32)!");
 
     println!("========================================================");
-    println!("  [AgentOS] Kernel Causal Inicializado al 100%");
+    println!("  [GenOS] Kernel Causal Inicializado al 100%");
     println!("  Sub-sistemas activos: UART, GDT, IDT, PIC 8259, PIT 8254,");
     println!("                        PMM, VMM, Heap, Merkle-DAG Causal,");
     println!("                        CSpace, Syscall (int 0x80), TCB Scheduler,");
@@ -265,7 +265,7 @@ pub extern "C" fn _start() -> ! {
     println!("========================================================");
 
     // Renderizar tarjetas visuales de estado en el Framebuffer gráfico
-    fb::draw_panel(40, 50, 580, 210, " SUBSISTEMAS ACTIVOS DEL KERNEL ", fb::Color::CYAN);
+    fb::draw_panel(40, 50, 580, 210, " SUBSISTEMAS ACTIVOS DEL KERNEL GENOS ", fb::Color::CYAN);
     fb::draw_string("GDT / TSS IST[0] (Double-Fault safe): OK", 60, 75, fb::Color::GREEN, fb::Color::DARK_GRAY);
     fb::draw_string("IDT 256 Vectores (#PF, IRQ0, IRQ4, int 0x80 Syscall): OK", 60, 95, fb::Color::GREEN, fb::Color::DARK_GRAY);
     fb::draw_string("Hardware PIC 8259 + PIT Timer 8254 (100 Hz / 10ms): OK", 60, 115, fb::Color::GREEN, fb::Color::DARK_GRAY);
@@ -273,7 +273,7 @@ pub extern "C" fn _start() -> ! {
     fb::draw_string("Grafo Causal: Merkle-DAG SHA-256 FIPS 180-4 Integro: OK", 60, 155, fb::Color::GREEN, fb::Color::DARK_GRAY);
     fb::draw_string("Seguridad: CSpace de Capacidades + Escrow Activo: OK", 60, 175, fb::Color::GREEN, fb::Color::DARK_GRAY);
     fb::draw_string("Kernel Tasks: TCBs & Conmutacion de Contexto: OK", 60, 195, fb::Color::GREEN, fb::Color::DARK_GRAY);
-    fb::draw_string("Modo: AgentOS Runtime & Interactive Shell Listo", 60, 215, fb::Color::CYAN, fb::Color::DARK_GRAY);
+    fb::draw_string("Modo: GenOS Runtime & Interactive Shell Listo", 60, 215, fb::Color::CYAN, fb::Color::DARK_GRAY);
 
     // Inicializar Shell interactivo de Ring 0 en COM1
     shell::init();
@@ -281,7 +281,7 @@ pub extern "C" fn _start() -> ! {
     // Para la prueba automatizada en QEMU, reportamos éxito a isa-debug-exit
     #[cfg(feature = "test-exit")]
     {
-        println!("[AgentOS] Modo de prueba automatizada activo. Saliendo...");
+        println!("[GenOS] Modo de prueba automatizada activo. Saliendo...");
         exit_qemu(QemuExitCode::Success);
     }
 

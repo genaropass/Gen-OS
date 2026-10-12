@@ -156,7 +156,7 @@ pub fn init(memmap: &LimineMemmapResponse, hhdm_offset: u64) {
     let mut pmm = PMM.lock();
     pmm.init(memmap, hhdm_offset);
     println!(
-        "[AgentOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB en {} regiones)",
+        "[GenOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB en {} regiones)",
         pmm.total_usable_bytes() / (1024 * 1024),
         pmm.total_usable_bytes() / 1024,
         pmm.region_count

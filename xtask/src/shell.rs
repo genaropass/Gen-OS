@@ -18,14 +18,12 @@ use agent_vm::{AgentVm, Opcode, Value};
 pub fn run_interactive_shell() {
     println!("\x1b[1;36m");
     println!("========================================================================");
-    println!("   ___                    _    ___  ____  ");
-    println!("  / _ \\                  | |  / _ \\/ ___| ");
-    println!(" / /_\\ \\ __ _  ___ _ __  | |_| | | \\___ \\ ");
-    println!(" |  _  |/ _` |/ _ \\ '_ \\ | __| | | |___) |");
-    println!(" |_| |_|\\__, |\\___|_| |_| \\__|\\___/|____/ ");
-    println!("         __/ |                            ");
-    println!("        |___/                             ");
-    println!("   AGENTOS OPERATOR SHELL — TERMINAL DE CONTROL INTERACTIVO");
+    println!("   ____             ___  ____  ");
+    println!("  / ___| ___ _ __  / _ \\/ ___| ");
+    println!(" | |  _ / _ \\ '_ \\| | | \\___ \\ ");
+    println!(" | |_| |  __/ | | | |_| |___) |");
+    println!("  \\____|\\___|_| |_|\\___/|____/ ");
+    println!("   GENOS OPERATOR SHELL — TERMINAL DE CONTROL INTERACTIVO");
     println!("   Escribe 'help' para ver la lista de comandos o 'demo' para la suite.");
     println!("========================================================================\x1b[0m\n");
 
@@ -77,7 +75,7 @@ pub fn run_interactive_shell() {
     );
 
     loop {
-        print!("\x1b[1;32mAgentOS [Branch:{}] > \x1b[0m", current_branch.0);
+        print!("\x1b[1;32mGenOS [Branch:{}] > \x1b[0m", current_branch.0);
         let _ = io::stdout().flush();
 
         let mut input = String::new();
@@ -96,7 +94,7 @@ pub fn run_interactive_shell() {
 
         match cmd {
             "help" => {
-                println!("\x1b[1;33mComandos disponibles en el Shell de AgentOS:\x1b[0m");
+                println!("\x1b[1;33mComandos disponibles en el Shell de GenOS:\x1b[0m");
                 println!("  status                      - Muestra telemetría global del sistema");
                 println!("  agents                      - Lista los agentes activos y su estado IFC");
                 println!("  spawn <nombre> [pasos]      - Instancia un nuevo agente nativo");
@@ -117,7 +115,7 @@ pub fn run_interactive_shell() {
                 println!("  exit                        - Sale del Shell interactivo");
             }
             "status" => {
-                println!("\x1b[1;34m[TELEMETRIA AGENTOS]\x1b[0m");
+                println!("\x1b[1;34m[TELEMETRIA GENOS]\x1b[0m");
                 println!("  * Rama actual del Multiverso: {:?}", current_branch);
                 println!("  * Agentes registrados: {}", agents.len());
                 println!("  * Acciones pendientes en Escrow: {}", supervisor.escrow.pending_count());
@@ -374,7 +372,7 @@ pub fn run_interactive_shell() {
                 print!("\x1b[2J\x1b[H");
             }
             "exit" | "quit" => {
-                println!("Saliendo de AgentOS Operator Shell. Hasta luego!");
+                println!("Saliendo de GenOS Operator Shell. Hasta luego!");
                 break;
             }
             other => {

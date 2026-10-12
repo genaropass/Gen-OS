@@ -7,7 +7,7 @@ use crate::qemu_exit::{exit_qemu, QemuExitCode};
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("\n=======================================================");
-    println!("[AGENTOS KERNEL PANIC]");
+    println!("[GENOS KERNEL PANIC]");
     if let Some(location) = info.location() {
         println!("Origen: {}:{}:{}", location.file(), location.line(), location.column());
     }

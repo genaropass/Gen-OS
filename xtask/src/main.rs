@@ -61,7 +61,7 @@ fn main() {
 }
 
 fn build_kernel(test_mode: bool) {
-    println!("[xtask] Compilando agentos-kernel para x86_64-unknown-none...");
+    println!("[xtask] Compilando kernel GenOS para x86_64-unknown-none...");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(cargo);
     cmd.args(["build", "--package", "agentos-kernel", "--target", "x86_64-unknown-none"]);
@@ -194,14 +194,12 @@ fn run_qemu(test_mode: bool) {
 pub fn run_live_demo() {
     println!("\x1b[1;36m");
     println!("========================================================================");
-    println!("   ___                    _    ___  ____  ");
-    println!("  / _ \\                  | |  / _ \\/ ___| ");
-    println!(" / /_\\ \\ __ _  ___ _ __  | |_| | | \\___ \\ ");
-    println!(" |  _  |/ _` |/ _ \\ '_ \\ | __| | | |___) |");
-    println!(" |_| |_|\\__, |\\___|_| |_| \\__|\\___/|____/ ");
-    println!("         __/ |                            ");
-    println!("        |___/                             ");
-    println!("   DEMOSTRACION INTERACTIVA EN VIVO — SISTEMA OPERATIVO PARA AGENTES");
+    println!("   ____             ___  ____  ");
+    println!("  / ___| ___ _ __  / _ \\/ ___| ");
+    println!(" | |  _ / _ \\ '_ \\| | | \\___ \\ ");
+    println!(" | |_| |  __/ | | | |_| |___) |");
+    println!("  \\____|\\___|_| |_|\\___/|____/ ");
+    println!("   DEMOSTRACION INTERACTIVA EN VIVO — GENOS OPERATING SYSTEM");
     println!("========================================================================\x1b[0m\n");
 
     // 1. Merkle-DAG Criptográfico
@@ -315,6 +313,6 @@ pub fn run_live_demo() {
 
     println!("\n\x1b[1;32m========================================================================");
     println!("  TODAS LAS DEMOSTRACIONES COMPLETADAS EXITOSAMENTE.");
-    println!("  AgentOS Kernel v0.2.0 y Runtime listos para produccion experimental.");
+    println!("  GenOS Kernel v0.2.0 y Runtime listos para produccion experimental.");
     println!("========================================================================\x1b[0m\n");
 }

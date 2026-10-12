@@ -45,7 +45,7 @@ pub fn init() {
         cspace: CSpace::new(),
     });
 
-    println!("[AgentOS::Syscall] Despachador de syscalls registrado (ABI int 0x80 & SYSCALL MSRs)");
+    println!("[GenOS::Syscall] Despachador de syscalls registrado (ABI int 0x80 & SYSCALL MSRs)");
     drop(state);
 
     // Inicializar interfaz hardware SYSCALL / SYSRET
@@ -122,7 +122,7 @@ pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u6
             }
 
             let released = state.escrow.commit_branch(branch_id);
-            println!("[AgentOS::Syscall] SYS_COMMIT_BRANCH: Liberadas {} accion(es) de escrow a hardware", released.len());
+            println!("[GenOS::Syscall] SYS_COMMIT_BRANCH: Liberadas {} accion(es) de escrow a hardware", released.len());
             released.len() as i64
         }
 
@@ -130,13 +130,13 @@ pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u6
             // arg1: branch_id -> Descarta rama y purga todas las acciones en escrow en O(1)
             let branch_id = BranchId(arg1 as u32);
             let dropped = state.escrow.abort_branch(branch_id);
-            println!("[AgentOS::Syscall] SYS_ABORT_BRANCH: Descartadas {} accion(es) de escrow sin fugas", dropped);
+            println!("[GenOS::Syscall] SYS_ABORT_BRANCH: Descartadas {} accion(es) de escrow sin fugas", dropped);
             dropped as i64
         }
 
         SYS_CAP_MINT => {
             // [H1 CORREGIDO]: Mintear capacidades raíz está terminantemente denegado a llamadas de usuario
-            println!("\x1b[1;31m[AgentOS::Security] ALERTA: Intento de invocar SYS_CAP_MINT denegado (EPERM)\x1b[0m");
+            println!("\x1b[1;31m[GenOS::Security] ALERTA: Intento de invocar SYS_CAP_MINT denegado (EPERM)\x1b[0m");
             EPERM
         }
 
@@ -215,7 +215,7 @@ pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u6
         }
 
         _ => {
-            println!("[AgentOS::Syscall] Syscall desconocida: {}", sys_num);
+            println!("[GenOS::Syscall] Syscall desconocida: {}", sys_num);
             ENOSYS
         }
     }

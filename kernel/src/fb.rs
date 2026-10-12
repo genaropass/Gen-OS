@@ -15,7 +15,7 @@ impl Color {
     pub const DARK_GRAY: Self = Self(0x1F2430);    // Fondo de paneles y tarjetas
     pub const LIGHT_GRAY: Self = Self(0x707A8A);   // Texto secundario
     pub const WHITE: Self = Self(0xF8F9FA);        // Texto primario
-    pub const CYAN: Self = Self(0x00E5FF);         // Acento AgentOS (Cyan eléctrico)
+    pub const CYAN: Self = Self(0x00E5FF);         // Acento GenOS (Cyan eléctrico)
     pub const GREEN: Self = Self(0x00E676);        // Estado OK / verificado
     pub const AMBER: Self = Self(0xFFD600);        // Advertencia / Escrow
     pub const RED: Self = Self(0xFF1744);          // Bloqueado / Excepción
@@ -110,7 +110,7 @@ impl FramebufferState {
 
         // Barra superior (Top Bar)
         self.fill_rect(0, 0, width, 32, Color::DARK_GRAY);
-        self.draw_string("  AGENTOS ", 12, 12, Color::CYAN, Color::DARK_GRAY);
+        self.draw_string("  GENOS ", 12, 12, Color::CYAN, Color::DARK_GRAY);
         self.draw_string("| Causal Microkernel v0.2.0 (x86-64 Bare-Metal UEFI)", 100, 12, Color::WHITE, Color::DARK_GRAY);
         self.draw_string("[ SECURE RING 0 ]", width.saturating_sub(180), 12, Color::GREEN, Color::DARK_GRAY);
 

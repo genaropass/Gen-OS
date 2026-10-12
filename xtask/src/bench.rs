@@ -72,7 +72,7 @@ pub fn run_benchmarks() {
     let profile = if is_debug { "DEBUG (Sin optimizaciones)" } else { "RELEASE (Optimizado --release)" };
 
     println!("\x1b[1;36m========================================================================");
-    println!("   AGENTOS HIGH-PERFORMANCE SUBSYSTEM STATISTICAL BENCHMARK SUITE");
+    println!("   GENOS HIGH-PERFORMANCE SUBSYSTEM STATISTICAL BENCHMARK SUITE");
     println!("========================================================================\x1b[0m");
     println!("  * Entorno: Host OS: {}, Arch: {}, Hilos lógicos: {}", os, arch, cores);
     println!("  * Perfil de compilación: \x1b[1;{}m{}\x1b[0m", if is_debug { "33" } else { "32" }, profile);
@@ -119,7 +119,7 @@ pub fn run_benchmarks() {
     let seed = [0x77u8; 32];
     let keypair = PqcKeyPair::from_seed(seed);
     let pubkey = keypair.public_key();
-    let message = b"AGENTOS_TRANSACTION_PAYLOAD: quantum_immune_transition";
+    let message = b"GENOS_TRANSACTION_PAYLOAD: quantum_immune_transition";
 
     // Warmup
     for _ in 0..20 {

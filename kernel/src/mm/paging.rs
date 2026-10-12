@@ -300,13 +300,13 @@ pub fn protect_page(
 /// Diagnóstico de paginación activa en el arranque
 pub fn test_paging(hhdm_offset: u64) {
     let cr3 = read_cr3();
-    println!("[AgentOS::VMM] CR3 activo (PML4 base): 0x{:016x}", cr3);
+    println!("[GenOS::VMM] CR3 activo (PML4 base): 0x{:016x}", cr3);
 
     // Probar traducción de una dirección conocida (código del kernel)
     let sample_virt = 0xffffffff80000000u64;
     if let Some(phys) = translate_addr(sample_virt, hhdm_offset) {
-        println!("[AgentOS::VMM] Traduccion verificada: Virt 0x{:016x} -> Phys 0x{:016x}", sample_virt, phys);
+        println!("[GenOS::VMM] Traduccion verificada: Virt 0x{:016x} -> Phys 0x{:016x}", sample_virt, phys);
     } else {
-        println!("[AgentOS::VMM] Nota: Direccion 0x{:016x} no mapeada o usa paginas fuera de nivel 4", sample_virt);
+        println!("[GenOS::VMM] Nota: Direccion 0x{:016x} no mapeada o usa paginas fuera de nivel 4", sample_virt);
     }
 }

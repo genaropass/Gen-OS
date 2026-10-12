@@ -9,7 +9,7 @@ pub const EXPECTED_BOOTX64_SHA256: &str = "51ca2b20ed14bbc678a396cdfb0c1d941acbc
 
 pub fn run_doctor() {
     println!("\x1b[1;36m========================================================================");
-    println!("   AGENTOS DIAGNOSTIC TOOL (cargo xtask doctor)");
+    println!("   GENOS DIAGNOSTIC TOOL (cargo xtask doctor)");
     println!("   Verificación de Toolchain, Bootloader, QEMU y Firmware UEFI");
     println!("========================================================================\x1b[0m\n");
 
@@ -114,7 +114,7 @@ pub fn run_doctor() {
 
     println!("\n------------------------------------------------------------------------");
     if all_ok && qemu_bin.is_some() {
-        println!("\x1b[1;32mTODO LISTO: Tu entorno está 100% configurado para compilar y arrancar AgentOS en QEMU.\x1b[0m");
+        println!("\x1b[1;32mTODO LISTO: Tu entorno está 100% configurado para compilar y arrancar GenOS en QEMU.\x1b[0m");
         println!("Comandos recomendados:");
         println!("  cargo xtask build      - Compila el kernel y ensambla la partición UEFI ESP");
         println!("  cargo xtask run        - Arranca el microkernel en QEMU con UEFI");

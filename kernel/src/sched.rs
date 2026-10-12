@@ -51,7 +51,7 @@ pub fn init() {
     let mut sched = SCHEDULER.lock();
     let main_task = KernelTask::for_current("kernel_main");
     sched.current = Some(main_task);
-    println!("[AgentOS::Sched] Planificador preemptivo inicializado (Quantum: 100 ms)");
+    println!("[GenOS::Sched] Planificador preemptivo inicializado (Quantum: 100 ms)");
 }
 
 /// Instancia y encola una nueva tarea de fondo en Ring 0
@@ -59,7 +59,7 @@ pub fn spawn(name: &'static str, entry_point: fn() -> !) {
     let task = KernelTask::new(name, entry_point);
     let id = task.id;
     SCHEDULER.lock().enqueue(task);
-    println!("[AgentOS::Sched] Tarea Ring 0 instanciada: '{}' [ID: {}]", name, id);
+    println!("[GenOS::Sched] Tarea Ring 0 instanciada: '{}' [ID: {}]", name, id);
 }
 
 /// Cede voluntariamente la CPU a la siguiente tarea lista

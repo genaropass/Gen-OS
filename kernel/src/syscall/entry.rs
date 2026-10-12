@@ -135,5 +135,5 @@ pub fn init() {
         );
     }
 
-    println!("[AgentOS::Syscall] Interfaz hardware SYSCALL / SYSRET configurada en MSRs (LSTAR/STAR)");
+    println!("[GenOS::Syscall] Interfaz hardware SYSCALL / SYSRET configurada en MSRs (LSTAR/STAR)");
 }

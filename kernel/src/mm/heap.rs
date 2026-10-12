@@ -188,7 +188,7 @@ pub static ALLOCATOR: KernelAllocator = KernelAllocator::new();
 pub fn init() {
     ALLOCATOR.init();
     println!(
-        "[AgentOS::Heap] Monton dinamico del kernel inicializado: {} KiB (1 MiB)",
+        "[GenOS::Heap] Monton dinamico del kernel inicializado: {} KiB (1 MiB)",
         HEAP_SIZE / 1024
     );
 }
