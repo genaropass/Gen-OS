@@ -108,7 +108,7 @@ impl SecurityLabel {
 
 pub mod hash;
 
-/// Registro atómico de un Efecto en el Libro Mayor Causal (Nodo del Merkle-DAG)
+/// Registro atómico de un Efecto en el Libro Mayor Causal (Nodo del Merkle-DAG v2)
 #[derive(Clone, Debug, PartialEq)]
 pub struct CausalRecord {
     pub id: EffectId,
@@ -119,17 +119,21 @@ pub struct CausalRecord {
     pub reversibility: Reversibility,
     /// Causas inmediatas (aristas entrantes en el DAG)
     pub causes: Vec<EffectId>,
-    /// Resumen o firma del payload
+    /// Identificadores de capacidades empleadas para la autorización
+    pub used_capabilities: Vec<u64>,
+    /// Resumen o firma del payload (SHA-256)
     pub payload_digest: [u8; 32],
-    /// Hash criptográfico Merkle (sella id, procedencia, causas y payload)
+    /// Hash del nodo anterior para encadenamiento lineal
+    pub previous_record_hash: [u8; 32],
+    /// Hash criptográfico Merkle (sella id, procedencia, causas, capacidades, label, prev_hash y payload)
     pub merkle_hash: [u8; 32],
 }
 
-/// El Libro Mayor Causal (Causal Ledger)
+/// El Libro Mayor Causal (Causal Ledger v2)
 /// Almacén estructurado en Merkle-DAG que garantiza la inmutabilidad y verificabilidad criptográfica
 #[derive(Default, Debug)]
 pub struct CausalLedger {
-    records: Vec<CausalRecord>,
+    pub records: Vec<CausalRecord>,
     next_effect_id: u64,
 }
 
@@ -139,6 +143,42 @@ impl CausalLedger {
             records: Vec::new(),
             next_effect_id: 1,
         }
+    }
+
+    /// Calcula el hash Merkle determinista de un nodo
+    pub fn compute_record_hash(
+        id: EffectId,
+        branch: BranchId,
+        emitter: DomainId,
+        target: DomainId,
+        label: SecurityLabel,
+        causes: &[EffectId],
+        used_capabilities: &[u64],
+        payload_digest: &[u8; 32],
+        previous_record_hash: &[u8; 32],
+        parent_hashes: &[[u8; 32]],
+    ) -> [u8; 32] {
+        let mut input = Vec::with_capacity(256);
+        input.extend_from_slice(&id.0.to_be_bytes());
+        input.extend_from_slice(&branch.0.to_be_bytes());
+        input.extend_from_slice(&emitter.0.to_be_bytes());
+        input.extend_from_slice(&target.0.to_be_bytes());
+        input.extend_from_slice(&label.confidentiality.to_be_bytes());
+        input.extend_from_slice(&label.integrity.to_be_bytes());
+        input.extend_from_slice(&label.taint_mask.to_be_bytes());
+        input.extend_from_slice(previous_record_hash);
+        for &cap in used_capabilities {
+            input.extend_from_slice(&cap.to_be_bytes());
+        }
+        for (i, &cause_id) in causes.iter().enumerate() {
+            if i < parent_hashes.len() {
+                input.extend_from_slice(&parent_hashes[i]);
+            } else {
+                input.extend_from_slice(&cause_id.0.to_be_bytes());
+            }
+        }
+        input.extend_from_slice(payload_digest);
+        hash::sha256(&input)
     }
 
     /// Registra un nuevo efecto en el Merkle-DAG causal calculando su hash criptográfico
@@ -152,26 +192,55 @@ impl CausalLedger {
         reversibility: Reversibility,
         payload_digest: [u8; 32],
     ) -> EffectId {
+        self.record_effect_with_caps(
+            branch,
+            emitter,
+            target,
+            causes,
+            Vec::new(),
+            label,
+            reversibility,
+            payload_digest,
+        )
+    }
+
+    /// Registra un nuevo efecto asociando explícitamente las capacidades empleadas
+    pub fn record_effect_with_caps(
+        &mut self,
+        branch: BranchId,
+        emitter: DomainId,
+        target: DomainId,
+        causes: Vec<EffectId>,
+        used_capabilities: Vec<u64>,
+        label: SecurityLabel,
+        reversibility: Reversibility,
+        payload_digest: [u8; 32],
+    ) -> EffectId {
         let id = EffectId(self.next_effect_id);
         self.next_effect_id += 1;
 
-        // Construir buffer para el hash Merkle del nodo
-        let mut hash_input = Vec::with_capacity(128);
-        hash_input.extend_from_slice(&id.0.to_be_bytes());
-        hash_input.extend_from_slice(&branch.0.to_be_bytes());
-        hash_input.extend_from_slice(&emitter.0.to_be_bytes());
-        hash_input.extend_from_slice(&target.0.to_be_bytes());
-        hash_input.extend_from_slice(&label.confidentiality.to_be_bytes());
-        hash_input.extend_from_slice(&label.integrity.to_be_bytes());
+        let prev_hash = self.records.last().map(|r| r.merkle_hash).unwrap_or([0u8; 32]);
+        let mut parent_hashes = Vec::with_capacity(causes.len());
         for &cause_id in &causes {
             if let Some(parent) = self.get_effect(cause_id) {
-                hash_input.extend_from_slice(&parent.merkle_hash);
+                parent_hashes.push(parent.merkle_hash);
             } else {
-                hash_input.extend_from_slice(&cause_id.0.to_be_bytes());
+                parent_hashes.push([0u8; 32]);
             }
         }
-        hash_input.extend_from_slice(&payload_digest);
-        let merkle_hash = hash::sha256(&hash_input);
+
+        let merkle_hash = Self::compute_record_hash(
+            id,
+            branch,
+            emitter,
+            target,
+            label,
+            &causes,
+            &used_capabilities,
+            &payload_digest,
+            &prev_hash,
+            &parent_hashes,
+        );
 
         let record = CausalRecord {
             id,
@@ -181,7 +250,9 @@ impl CausalLedger {
             label,
             reversibility,
             causes,
+            used_capabilities,
             payload_digest,
+            previous_record_hash: prev_hash,
             merkle_hash,
         };
 
@@ -191,23 +262,73 @@ impl CausalLedger {
 
     /// Verifica criptográficamente que ningún nodo del Merkle-DAG haya sido alterado en memoria
     pub fn verify_merkle_integrity(&self) -> bool {
+        let mut expected_prev = [0u8; 32];
         for record in &self.records {
-            let mut hash_input = Vec::with_capacity(128);
-            hash_input.extend_from_slice(&record.id.0.to_be_bytes());
-            hash_input.extend_from_slice(&record.branch.0.to_be_bytes());
-            hash_input.extend_from_slice(&record.emitter.0.to_be_bytes());
-            hash_input.extend_from_slice(&record.target.0.to_be_bytes());
-            hash_input.extend_from_slice(&record.label.confidentiality.to_be_bytes());
-            hash_input.extend_from_slice(&record.label.integrity.to_be_bytes());
+            if record.previous_record_hash != expected_prev {
+                return false;
+            }
+
+            let mut parent_hashes = Vec::with_capacity(record.causes.len());
             for &cause_id in &record.causes {
                 if let Some(parent) = self.get_effect(cause_id) {
-                    hash_input.extend_from_slice(&parent.merkle_hash);
+                    parent_hashes.push(parent.merkle_hash);
                 } else {
-                    hash_input.extend_from_slice(&cause_id.0.to_be_bytes());
+                    parent_hashes.push([0u8; 32]);
                 }
             }
-            hash_input.extend_from_slice(&record.payload_digest);
-            let expected_hash = hash::sha256(&hash_input);
+
+            let expected_hash = Self::compute_record_hash(
+                record.id,
+                record.branch,
+                record.emitter,
+                record.target,
+                record.label,
+                &record.causes,
+                &record.used_capabilities,
+                &record.payload_digest,
+                &record.previous_record_hash,
+                &parent_hashes,
+            );
+
+            if record.merkle_hash != expected_hash {
+                return false;
+            }
+
+            expected_prev = record.merkle_hash;
+        }
+        true
+    }
+
+    /// Verifica la integridad del subgrafo de procedencia causal hacia atrás desde un efecto dado
+    pub fn verify_subgraph_integrity(&self, root: EffectId) -> bool {
+        let ancestors = self.why(root);
+        for effect_id in ancestors {
+            let record = match self.get_effect(effect_id) {
+                Some(r) => r,
+                None => return false,
+            };
+
+            let mut parent_hashes = Vec::with_capacity(record.causes.len());
+            for &cause_id in &record.causes {
+                if let Some(parent) = self.get_effect(cause_id) {
+                    parent_hashes.push(parent.merkle_hash);
+                } else {
+                    parent_hashes.push([0u8; 32]);
+                }
+            }
+
+            let expected_hash = Self::compute_record_hash(
+                record.id,
+                record.branch,
+                record.emitter,
+                record.target,
+                record.label,
+                &record.causes,
+                &record.used_capabilities,
+                &record.payload_digest,
+                &record.previous_record_hash,
+                &parent_hashes,
+            );
 
             if record.merkle_hash != expected_hash {
                 return false;
@@ -228,6 +349,12 @@ impl CausalLedger {
 
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
+    }
+
+    /// Retorna los registros causales en orden topológico para auditoría formal
+    pub fn explain(&self, target_id: EffectId) -> Vec<&CausalRecord> {
+        let why_ids = self.why(target_id);
+        why_ids.into_iter().filter_map(|id| self.get_effect(id)).collect()
     }
 
     /// Syscall `why`: Reconstruye el linaje causal completo (recorrido inverso del DAG)
@@ -448,5 +575,56 @@ mod tests {
             !ledger.verify_merkle_integrity(),
             "La alteracion debe ser detectada inmediatamente por el Merkle-DAG"
         );
+    }
+
+    #[test]
+    fn test_subgraph_integrity_and_explanation() {
+        let mut ledger = CausalLedger::new();
+        let branch = BranchId(0);
+
+        let e1 = ledger.record_effect_with_caps(
+            branch, DomainId(1), DomainId(2), vec![], vec![101, 102],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [0x11; 32],
+        );
+        let e2 = ledger.record_effect_with_caps(
+            branch, DomainId(2), DomainId(3), vec![e1], vec![103],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [0x22; 32],
+        );
+        let e3 = ledger.record_effect(
+            branch, DomainId(3), DomainId(4), vec![e2],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::Irreversible, [0x33; 32],
+        );
+
+        // Subgrafo válido
+        assert!(ledger.verify_subgraph_integrity(e3));
+
+        // Explicación causal estructurada
+        let explanation = ledger.explain(e3);
+        assert_eq!(explanation.len(), 3);
+        assert_eq!(explanation[0].id, e3);
+        assert_eq!(explanation[1].id, e2);
+        assert_eq!(explanation[2].id, e1);
+        assert_eq!(explanation[2].used_capabilities, vec![101, 102]);
+    }
+
+    #[test]
+    fn test_linear_chain_tamper_detection() {
+        let mut ledger = CausalLedger::new();
+        let branch = BranchId(0);
+
+        let _e1 = ledger.record_effect(
+            branch, DomainId(1), DomainId(2), vec![],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [0x10; 32],
+        );
+        let _e2 = ledger.record_effect(
+            branch, DomainId(2), DomainId(3), vec![],
+            SecurityLabel::TRUSTED_KERNEL, Reversibility::PurelyReversible, [0x20; 32],
+        );
+
+        assert!(ledger.verify_merkle_integrity());
+
+        // Alterar previous_record_hash de e2 (simular eliminación de nodo e1)
+        ledger.records[1].previous_record_hash = [0u8; 32];
+        assert!(!ledger.verify_merkle_integrity(), "Debe detectar ruptura del encadenamiento lineal");
     }
 }
