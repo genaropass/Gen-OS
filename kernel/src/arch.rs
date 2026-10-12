@@ -2,6 +2,7 @@
 
 pub mod pic;
 pub mod pit;
+pub mod cpu;
 
 use core::arch::asm;
 

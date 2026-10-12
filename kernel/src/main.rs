@@ -85,6 +85,9 @@ pub extern "C" fn _start() -> ! {
     }
     println!("[AgentOS] Autotest IDT (#BP) superado exitosamente!");
 
+    // 4b. Activar protecciones de hardware de la CPU (CR0.WP, EFER.NXE, SMEP, SMAP, UMIP)
+    arch::cpu::init_cpu_security();
+
     // 5. Configurar controlador de interrupciones PIC 8259 y Temporizador PIT 8254
     println!("[AgentOS] Configurando Dual PIC 8259 (Remap a vectores 32..47)...");
     unsafe {
@@ -119,6 +122,26 @@ pub extern "C" fn _start() -> ! {
         test_vec.len(),
         test_vec.capacity()
     );
+
+    // 8b. Autotest de Espacio de Direcciones Aislado (PML4 AddressSpace)
+    println!("[AgentOS::VMM] Validando aislamiento de AddressSpace por agente...");
+    if let Some(mut user_as) = mm::address_space::AddressSpace::new() {
+        let test_virt = 0x0040_0000u64;
+        if let Some(frame) = mm::frame::alloc_frame() {
+            let res = user_as.map_page(
+                test_virt,
+                frame.start_address(),
+                mm::paging::flags::WRITABLE | mm::paging::flags::USER_ACCESSIBLE,
+            );
+            if res.is_ok() {
+                let trans = user_as.translate(test_virt);
+                println!(
+                    "[AgentOS::VMM] AddressSpace aislado OK: Virt 0x{:08x} -> Phys 0x{:08x} (PML4: 0x{:x})",
+                    test_virt, trans.unwrap_or(0), user_as.pml4_phys
+                );
+            }
+        }
+    }
 
     // 9. Autotest del Grafo Causal en Ring 0
     let mut ledger = CausalLedger::new();

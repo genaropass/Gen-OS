@@ -4,6 +4,7 @@
 pub mod frame;
 pub mod paging;
 pub mod heap;
+pub mod address_space;
 
 use crate::limine::{LimineMemmapResponse, LimineHhdmResponse};
 use crate::println;

@@ -1,8 +1,10 @@
 //! Gestor de Memoria Física (PMM - Physical Memory Manager)
 //! Asigna y rastrea marcos físicos de 4 KiB a partir del mapa de memoria de Limine.
+//! Almacena las regiones utilizables en memoria interna para asignaciones autónomas libres de dependencias externas.
 
 use crate::limine::{LimineMemmapResponse, LIMINE_MEMMAP_USABLE};
 use crate::println;
+use crate::sync::IrqSpinLock;
 
 pub const PAGE_SIZE: u64 = 4096;
 
@@ -24,21 +26,30 @@ impl PhysFrame {
     }
 }
 
-/// Asignador de marcos físicos por avance (Bump Allocator con soporte de regiones múltiples)
+/// Descriptor de región física utilizable
+#[derive(Clone, Copy, Default)]
+pub struct UsableRegion {
+    pub base: u64,
+    pub length: u64,
+}
+
+/// Asignador de marcos físicos por avance (Bump Allocator sobre regiones físicas descubiertas)
 pub struct PhysicalMemoryManager {
     hhdm_offset: u64,
-    current_entry_idx: usize,
+    regions: [UsableRegion; 32],
+    region_count: usize,
+    current_region_idx: usize,
     next_frame_addr: u64,
     total_usable_bytes: u64,
     allocated_frames: u64,
     initialized: bool,
 }
 
-use crate::sync::IrqSpinLock;
-
 static PMM: IrqSpinLock<PhysicalMemoryManager> = IrqSpinLock::new(PhysicalMemoryManager {
     hhdm_offset: 0,
-    current_entry_idx: 0,
+    regions: [UsableRegion { base: 0, length: 0 }; 32],
+    region_count: 0,
+    current_region_idx: 0,
     next_frame_addr: 0,
     total_usable_bytes: 0,
     allocated_frames: 0,
@@ -48,7 +59,8 @@ static PMM: IrqSpinLock<PhysicalMemoryManager> = IrqSpinLock::new(PhysicalMemory
 impl PhysicalMemoryManager {
     pub fn init(&mut self, memmap: &LimineMemmapResponse, hhdm_offset: u64) {
         self.hhdm_offset = hhdm_offset;
-        self.current_entry_idx = 0;
+        self.region_count = 0;
+        self.current_region_idx = 0;
         self.next_frame_addr = 0;
         self.total_usable_bytes = 0;
         self.allocated_frames = 0;
@@ -58,10 +70,15 @@ impl PhysicalMemoryManager {
             if let Some(entry) = memmap.get_entry(i) {
                 if entry.typ == LIMINE_MEMMAP_USABLE {
                     self.total_usable_bytes += entry.length;
-                    if self.next_frame_addr == 0 {
-                        self.current_entry_idx = i;
-                        // Alinear la dirección base al límite de página hacia arriba
-                        self.next_frame_addr = (entry.base + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+                    if self.region_count < 32 {
+                        self.regions[self.region_count] = UsableRegion {
+                            base: entry.base,
+                            length: entry.length,
+                        };
+                        if self.region_count == 0 {
+                            self.next_frame_addr = (entry.base + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+                        }
+                        self.region_count += 1;
                     }
                 }
             }
@@ -71,33 +88,26 @@ impl PhysicalMemoryManager {
     }
 
     /// Asigna un marco de memoria física contiguo de 4 KiB
-    pub fn alloc_frame(&mut self, memmap: &LimineMemmapResponse) -> Option<PhysFrame> {
+    pub fn alloc_frame(&mut self) -> Option<PhysFrame> {
         if !self.initialized {
             return None;
         }
 
-        let count = memmap.entry_count();
-        while self.current_entry_idx < count {
-            if let Some(entry) = memmap.get_entry(self.current_entry_idx) {
-                if entry.typ == LIMINE_MEMMAP_USABLE {
-                    let entry_end = entry.base + entry.length;
-                    if self.next_frame_addr + PAGE_SIZE <= entry_end {
-                        let frame = PhysFrame::from_start_address(self.next_frame_addr);
-                        self.next_frame_addr += PAGE_SIZE;
-                        self.allocated_frames += 1;
-                        return Some(frame);
-                    }
-                }
+        while self.current_region_idx < self.region_count {
+            let reg = self.regions[self.current_region_idx];
+            let reg_end = reg.base + reg.length;
+            if self.next_frame_addr + PAGE_SIZE <= reg_end {
+                let frame = PhysFrame::from_start_address(self.next_frame_addr);
+                self.next_frame_addr += PAGE_SIZE;
+                self.allocated_frames += 1;
+                return Some(frame);
             }
 
-            // Pasar a la siguiente entrada utilizable
-            self.current_entry_idx += 1;
-            if self.current_entry_idx < count {
-                if let Some(next_entry) = memmap.get_entry(self.current_entry_idx) {
-                    if next_entry.typ == LIMINE_MEMMAP_USABLE {
-                        self.next_frame_addr = (next_entry.base + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-                    }
-                }
+            // Pasar a la siguiente región utilizable
+            self.current_region_idx += 1;
+            if self.current_region_idx < self.region_count {
+                let next_reg = self.regions[self.current_region_idx];
+                self.next_frame_addr = (next_reg.base + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
             }
         }
 
@@ -122,15 +132,16 @@ pub fn init(memmap: &LimineMemmapResponse, hhdm_offset: u64) {
     let mut pmm = PMM.lock();
     pmm.init(memmap, hhdm_offset);
     println!(
-        "[AgentOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB)",
+        "[AgentOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB en {} regiones)",
         pmm.total_usable_bytes() / (1024 * 1024),
-        pmm.total_usable_bytes() / 1024
+        pmm.total_usable_bytes() / 1024,
+        pmm.region_count
     );
 }
 
 /// Asigna un marco físico global
-pub fn alloc_frame(memmap: &LimineMemmapResponse) -> Option<PhysFrame> {
-    PMM.lock().alloc_frame(memmap)
+pub fn alloc_frame() -> Option<PhysFrame> {
+    PMM.lock().alloc_frame()
 }
 
 /// Obtiene el offset del HHDM
@@ -138,7 +149,7 @@ pub fn hhdm_offset() -> u64 {
     PMM.lock().hhdm_offset()
 }
 
-/// Retorna estadisticas reales de PMM: (marcos_asignados, total_bytes_usables)
+/// Retorna estadísticas reales de PMM: (marcos_asignados, total_bytes_usables)
 pub fn pmm_stats() -> (u64, u64) {
     let pmm = PMM.lock();
     (pmm.allocated_frames, pmm.total_usable_bytes)
