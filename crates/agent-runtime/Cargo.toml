@@ -1,0 +1,11 @@
+[package]
+name = "agent-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime de Agentes Autonomos, Supervisor de Seguridad y Motor del Multiverso para AgentOS"
+
+[dependencies]
+causal-core = { path = "../causal-core" }
+capability-engine = { path = "../capability-engine" }
+
+[dev-dependencies]

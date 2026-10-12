@@ -215,6 +215,11 @@ impl EscrowManager {
     pub fn pending_count(&self) -> usize {
         self.staged.len()
     }
+
+    /// Cantidad de efectos retenidos para una rama específica
+    pub fn staged_count(&self, branch: BranchId) -> usize {
+        self.staged.iter().filter(|e| e.branch == branch).count()
+    }
 }
 
 #[cfg(test)]

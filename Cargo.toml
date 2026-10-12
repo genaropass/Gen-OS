@@ -2,12 +2,14 @@
 members = [
     "crates/causal-core",
     "crates/capability-engine",
+    "crates/agent-runtime",
     "kernel",
     "xtask",
 ]
 default-members = [
     "crates/causal-core",
     "crates/capability-engine",
+    "crates/agent-runtime",
     "xtask",
 ]
 resolver = "2"
