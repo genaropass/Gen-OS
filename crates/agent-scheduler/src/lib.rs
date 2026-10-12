@@ -85,6 +85,9 @@ pub struct TaskDescriptor {
     pub budget: ResourceBudget,
     pub waiting_on: Vec<EffectId>,
     pub produces: Vec<EffectId>,
+    pub deadline_ms: Option<u64>,
+    pub integrity_level: u16,
+    pub created_at_ms: u64,
 }
 
 impl TaskDescriptor {
@@ -105,7 +108,20 @@ impl TaskDescriptor {
             budget,
             waiting_on: Vec::new(),
             produces: Vec::new(),
+            deadline_ms: None,
+            integrity_level: 50,
+            created_at_ms: 0,
         }
+    }
+
+    pub fn with_deadline(mut self, deadline_ms: u64) -> Self {
+        self.deadline_ms = Some(deadline_ms);
+        self
+    }
+
+    pub fn with_integrity(mut self, integrity_level: u16) -> Self {
+        self.integrity_level = integrity_level;
+        self
     }
 }
 
@@ -241,12 +257,22 @@ impl CausalScheduler {
 
     /// Selecciona la siguiente tarea Ready con mayor prioridad efectiva para ejecutar
     pub fn schedule_next(&mut self) -> Option<TaskId> {
-        // Encontrar tarea Ready con la mayor effective_priority
+        // Encontrar tarea Ready optimizando por prioridad efectiva, urgencia de plazo e integridad
         let best_candidate = self
             .tasks
             .values()
             .filter(|t| t.state == TaskState::Ready)
-            .max_by_key(|t| (t.effective_priority, core::cmp::Reverse(t.id.0)))
+            .max_by_key(|t| {
+                let deadline_score = match t.deadline_ms {
+                    Some(d) => 10_000_000u64.saturating_sub(d),
+                    None => 0,
+                };
+                (
+                    (t.effective_priority as u64) * 10_000 + (t.integrity_level as u64),
+                    deadline_score,
+                    core::cmp::Reverse(t.id.0)
+                )
+            })
             .map(|t| t.id);
 
         if let Some(id) = best_candidate {
@@ -280,6 +306,57 @@ impl CausalScheduler {
     pub fn current_task(&self) -> Option<TaskId> {
         self.current_task
     }
+}
+
+/// Planificador FIFO Convencional de Línea Base (para comparativas y benchmarks)
+#[derive(Default, Debug)]
+pub struct FifoScheduler {
+    pub tasks: Vec<TaskDescriptor>,
+    pub current_task: Option<TaskId>,
+}
+
+impl FifoScheduler {
+    pub fn new() -> Self {
+        Self {
+            tasks: Vec::new(),
+            current_task: None,
+        }
+    }
+
+    pub fn admit_task(&mut self, task: TaskDescriptor) {
+        self.tasks.push(task);
+    }
+
+    pub fn schedule_next(&mut self) -> Option<TaskId> {
+        let idx = self.tasks.iter().position(|t| t.state == TaskState::Ready)?;
+        self.tasks[idx].state = TaskState::Running;
+        let id = self.tasks[idx].id;
+        self.current_task = Some(id);
+        Some(id)
+    }
+
+    pub fn complete_task(&mut self, id: TaskId) {
+        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id) {
+            t.state = TaskState::Completed;
+        }
+        if self.current_task == Some(id) {
+            self.current_task = None;
+        }
+    }
+}
+
+/// Calcula el Índice de Equidad de Jain (Jain's Fairness Index)
+/// Retorna un valor en [1/n, 1.0], donde 1.0 representa equidad perfecta
+pub fn compute_jains_fairness_index(allocations: &[f64]) -> f64 {
+    if allocations.is_empty() {
+        return 1.0;
+    }
+    let sum: f64 = allocations.iter().sum();
+    let sum_sq: f64 = allocations.iter().map(|&x| x * x).sum();
+    if sum_sq == 0.0 {
+        return 1.0;
+    }
+    (sum * sum) / ((allocations.len() as f64) * sum_sq)
 }
 
 #[cfg(test)]
