@@ -86,16 +86,74 @@ impl fmt::Write for SerialPort {
 
 pub static SERIAL1: SerialPort = SerialPort::new(COM1);
 
-/// Invocado por el manejador de interrupciones de IDT (IRQ 4 / Vector 36)
-pub fn on_serial_rx() {
-    while let Some(b) = SERIAL1.read_byte() {
-        crate::shell::handle_char(b);
+use crate::sync::IrqSpinLock;
+
+const RX_BUFFER_CAPACITY: usize = 256;
+
+pub struct RxRingBuffer {
+    buffer: [u8; RX_BUFFER_CAPACITY],
+    head: usize,
+    tail: usize,
+}
+
+impl RxRingBuffer {
+    pub const fn new() -> Self {
+        Self {
+            buffer: [0; RX_BUFFER_CAPACITY],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    pub fn push(&mut self, byte: u8) -> bool {
+        let next_head = (self.head + 1) % RX_BUFFER_CAPACITY;
+        if next_head == self.tail {
+            return false; // Buffer lleno, descartar para prevenir overflow
+        }
+        self.buffer[self.head] = byte;
+        self.head = next_head;
+        true
+    }
+
+    pub fn pop(&mut self) -> Option<u8> {
+        if self.head == self.tail {
+            return None;
+        }
+        let byte = self.buffer[self.tail];
+        self.tail = (self.tail + 1) % RX_BUFFER_CAPACITY;
+        Some(byte)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.head == self.tail
     }
 }
 
-/// Sondeo activo de entrada en caso de interrupciones enmascaradas
+static RX_QUEUE: IrqSpinLock<RxRingBuffer> = IrqSpinLock::new(RxRingBuffer::new());
+
+/// Invocado por el manejador de interrupciones de IDT (IRQ 4 / Vector 36).
+/// Exclusivamente encola bytes en el ring buffer de memoria sin I/O pesada (corrige H3).
+pub fn on_serial_rx() {
+    if let Some(mut queue) = RX_QUEUE.try_lock() {
+        while let Some(b) = SERIAL1.read_byte() {
+            let _ = queue.push(b);
+        }
+    }
+}
+
+/// Extrae el siguiente byte recibido del ring buffer
+pub fn pop_rx_byte() -> Option<u8> {
+    RX_QUEUE.lock().pop()
+}
+
+/// Sondeo activo de entrada y despacho seguro al shell en el contexto de tarea / bucle principal
 pub fn poll_input() {
-    while let Some(b) = SERIAL1.read_byte() {
+    if let Some(mut queue) = RX_QUEUE.try_lock() {
+        while let Some(b) = SERIAL1.read_byte() {
+            let _ = queue.push(b);
+        }
+    }
+    while let Some(b) = pop_rx_byte() {
         crate::shell::handle_char(b);
     }
 }

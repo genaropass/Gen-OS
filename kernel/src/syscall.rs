@@ -4,7 +4,6 @@
 use crate::println;
 use causal_core::{CausalLedger, DomainId, BranchId, EffectId, Reversibility, SecurityLabel, EscrowManager};
 use capability_engine::{CSpace, ObjectId, Permissions, CapId};
-use core::cell::UnsafeCell;
 
 /// Identificadores de llamadas al sistema (Syscall Numbers)
 pub const SYS_EFFECT_LOG: u64 = 1;
@@ -23,35 +22,33 @@ struct SyscallState {
     cspace: CSpace,
 }
 
-struct SyscallWrapper(UnsafeCell<Option<SyscallState>>);
-unsafe impl Sync for SyscallWrapper {}
+use crate::sync::IrqSpinLock;
 
-static SYSCALL_STATE: SyscallWrapper = SyscallWrapper(UnsafeCell::new(None));
+static SYSCALL_STATE: IrqSpinLock<Option<SyscallState>> = IrqSpinLock::new(None);
 
 /// Inicializa el estado del despachador de llamadas al sistema
 pub fn init() {
-    unsafe {
-        *SYSCALL_STATE.0.get() = Some(SyscallState {
-            ledger: CausalLedger::new(),
-            escrow: EscrowManager::new(),
-            cspace: CSpace::new(),
-        });
-    }
+    let mut state = SYSCALL_STATE.lock();
+    *state = Some(SyscallState {
+        ledger: CausalLedger::new(),
+        escrow: EscrowManager::new(),
+        cspace: CSpace::new(),
+    });
     println!("[AgentOS::Syscall] Despachador de syscalls registrado (ABI int 0x80)");
 }
 
 /// Verifica matematicamente la integridad del Merkle-DAG y retorna (es_integro, acciones_en_escrow)
 pub fn verify_kernel_ledger() -> Option<(bool, usize)> {
-    let state_opt = unsafe { &mut *SYSCALL_STATE.0.get() };
-    state_opt.as_ref().map(|s| {
+    let state_guard = SYSCALL_STATE.lock();
+    state_guard.as_ref().map(|s| {
         (s.ledger.verify_merkle_integrity(), s.escrow.pending_count())
     })
 }
 
 /// Despachador central de llamadas al sistema ejecutado en Ring 0
 pub fn dispatch_syscall(sys_num: u64, arg1: u64, arg2: u64, arg3: u64, _arg4: u64) -> i64 {
-    let state_opt = unsafe { &mut *SYSCALL_STATE.0.get() };
-    let state = match state_opt.as_mut() {
+    let mut state_guard = SYSCALL_STATE.lock();
+    let state = match state_guard.as_mut() {
         Some(s) => s,
         None => return -1, // Syscalls no inicializadas
     };

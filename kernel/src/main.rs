@@ -15,7 +15,10 @@ pub mod syscall;
 pub mod font;
 pub mod fb;
 pub mod task;
+pub mod sched;
+pub mod sync;
 pub mod shell;
+pub mod bench;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -182,10 +185,10 @@ pub extern "C" fn _start() -> ! {
         sys_ret
     );
 
-    // 12. Autotest del Subsistema de Tareas de Kernel
-    println!("[AgentOS::Task] Validando estructuras de control de tareas (TCB)...");
-    let test_ctx = task::TaskContext::default();
-    println!("[AgentOS::Task] TCB Context inicializado en RIP=0, RSP=0x{:x}", test_ctx.rsp);
+    // 12. Inicializar Planificador Preemptivo de Ring 0
+    println!("[AgentOS::Sched] Inicializando planificador preemptivo de Ring 0...");
+    sched::init();
+    sched::spawn("agent_causal_monitor", agent_causal_worker);
 
     // 13. Habilitar Interrupciones de Hardware en CPU
     println!("[AgentOS] Habilitando interrupciones de hardware en CPU (sti)...");
@@ -223,10 +226,18 @@ pub extern "C" fn _start() -> ! {
         exit_qemu(QemuExitCode::Success);
     }
 
-    // Bucle interactivo del kernel: procesa caracteres del puerto serie y suspende CPU
+    // Bucle interactivo del kernel: procesa caracteres del puerto serie y cede tiempo a tareas
     #[cfg(not(feature = "test-exit"))]
     loop {
         serial::poll_input();
+        sched::yield_now();
         arch::hlt();
+    }
+}
+
+/// Tarea de agente de fondo ejecutada en Ring 0 para auditoría de integridad causal
+fn agent_causal_worker() -> ! {
+    loop {
+        sched::yield_now();
     }
 }

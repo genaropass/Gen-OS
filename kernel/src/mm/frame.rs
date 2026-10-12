@@ -34,17 +34,16 @@ pub struct PhysicalMemoryManager {
     initialized: bool,
 }
 
-struct PmmWrapper(core::cell::UnsafeCell<PhysicalMemoryManager>);
-unsafe impl Sync for PmmWrapper {}
+use crate::sync::IrqSpinLock;
 
-static PMM: PmmWrapper = PmmWrapper(core::cell::UnsafeCell::new(PhysicalMemoryManager {
+static PMM: IrqSpinLock<PhysicalMemoryManager> = IrqSpinLock::new(PhysicalMemoryManager {
     hhdm_offset: 0,
     current_entry_idx: 0,
     next_frame_addr: 0,
     total_usable_bytes: 0,
     allocated_frames: 0,
     initialized: false,
-}));
+});
 
 impl PhysicalMemoryManager {
     pub fn init(&mut self, memmap: &LimineMemmapResponse, hhdm_offset: u64) {
@@ -120,37 +119,27 @@ impl PhysicalMemoryManager {
 
 /// Inicializa el PMM global
 pub fn init(memmap: &LimineMemmapResponse, hhdm_offset: u64) {
-    unsafe {
-        let pmm = &mut *PMM.0.get();
-        pmm.init(memmap, hhdm_offset);
-        println!(
-            "[AgentOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB)",
-            pmm.total_usable_bytes() / (1024 * 1024),
-            pmm.total_usable_bytes() / 1024
-        );
-    }
+    let mut pmm = PMM.lock();
+    pmm.init(memmap, hhdm_offset);
+    println!(
+        "[AgentOS::PMM] Memoria fisica utilizable: {} MiB ({} KiB)",
+        pmm.total_usable_bytes() / (1024 * 1024),
+        pmm.total_usable_bytes() / 1024
+    );
 }
 
 /// Asigna un marco físico global
 pub fn alloc_frame(memmap: &LimineMemmapResponse) -> Option<PhysFrame> {
-    unsafe {
-        let pmm = &mut *PMM.0.get();
-        pmm.alloc_frame(memmap)
-    }
+    PMM.lock().alloc_frame(memmap)
 }
 
 /// Obtiene el offset del HHDM
 pub fn hhdm_offset() -> u64 {
-    unsafe {
-        let pmm = &*PMM.0.get();
-        pmm.hhdm_offset()
-    }
+    PMM.lock().hhdm_offset()
 }
 
 /// Retorna estadisticas reales de PMM: (marcos_asignados, total_bytes_usables)
 pub fn pmm_stats() -> (u64, u64) {
-    unsafe {
-        let pmm = &*PMM.0.get();
-        (pmm.allocated_frames, pmm.total_usable_bytes)
-    }
+    let pmm = PMM.lock();
+    (pmm.allocated_frames, pmm.total_usable_bytes)
 }

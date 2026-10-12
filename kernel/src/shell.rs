@@ -2,7 +2,6 @@
 //! Permite al operador consultar telemetría, inspeccionar el Merkle-DAG,
 //! monitorear capacidades y ejecutar diagnósticos del kernel en tiempo real.
 
-use core::cell::UnsafeCell;
 use crate::{print, println};
 use crate::arch::pit;
 
@@ -50,10 +49,9 @@ impl ShellBuffer {
     }
 }
 
-struct SafeShellBuffer(UnsafeCell<ShellBuffer>);
-unsafe impl Sync for SafeShellBuffer {}
+use crate::sync::IrqSpinLock;
 
-static SHELL_STATE: SafeShellBuffer = SafeShellBuffer(UnsafeCell::new(ShellBuffer::new()));
+static SHELL_STATE: IrqSpinLock<ShellBuffer> = IrqSpinLock::new(ShellBuffer::new());
 
 /// Inicializa el Shell de Ring 0 e imprime el banner de bienvenida
 pub fn init() {
@@ -71,7 +69,7 @@ pub fn print_prompt() {
 
 /// Procesa un byte de entrada recibido por el puerto serie
 pub fn handle_char(c: u8) {
-    let state = unsafe { &mut *SHELL_STATE.0.get() };
+    let mut state = SHELL_STATE.lock();
 
     match c {
         // Enter / Retorno de carro
@@ -114,7 +112,9 @@ fn execute_command(cmd: &str) {
             println!("  status       - Muestra el estado del sistema, ticks de PIT y uptime");
             println!("  causal       - Verifica la integridad matemática del Merkle-DAG");
             println!("  mem          - Muestra información del gestor de memoria (PMM / Heap)");
-            println!("  bench        - Ejecuta micro-benchmark en Ring 0 (SHA-256)");
+            println!("  tasks        - Muestra estado del planificador preemptivo y tareas");
+            println!("  yield        - Cede voluntariamente la CPU a otra tarea lista");
+            println!("  bench        - Ejecuta micro-benchmark en Ring 0 (RDTSC de hardware)");
             println!("  clear        - Limpia la pantalla del terminal serie");
             println!("  exit         - Apaga la máquina virtual en QEMU de forma limpia");
         }
@@ -151,18 +151,20 @@ fn execute_command(cmd: &str) {
             println!("  Heap: {} bytes en uso, {} bytes libres (capacidad 1 MiB)",
                 heap_alloc, heap_free);
         }
+        "tasks" => {
+            let (active_tasks, switches) = crate::sched::sched_stats();
+            println!("\x1b[1;34m[AgentOS::Scheduler]\x1b[0m");
+            println!("  Tareas activas: {}", active_tasks);
+            println!("  Conmutaciones de contexto ejecutadas: {}", switches);
+            println!("  Politica: Preemptive Time-slice Round-Robin (100 Hz / Quantum 100ms)");
+        }
+        "yield" => {
+            println!("[AgentOS::Scheduler] Cediendo CPU voluntariamente (yield_now)...");
+            crate::sched::yield_now();
+            println!("[AgentOS::Scheduler] Control retomado exitosamente!");
+        }
         "bench" => {
-            println!("\x1b[1;33m[AgentOS::Benchmark] Ejecutando 1,000 bloques SHA-256 en Ring 0...\x1b[0m");
-            let start_tick = pit::ticks();
-            let mut hash = [0u8; 32];
-            for i in 0..1000 {
-                let data = (i as u64).to_le_bytes();
-                hash = causal_core::hash::sha256(&data);
-            }
-            let end_tick = pit::ticks();
-            println!("  Hash final: {:02x}{:02x}{:02x}{:02x}...", hash[0], hash[1], hash[2], hash[3]);
-            println!("  Tiempo transcurrido: {} ticks ({} ms)", end_tick.saturating_sub(start_tick), (end_tick.saturating_sub(start_tick)) * 10);
-            println!("  \x1b[1;32mBenchmark completado exitosamente.\x1b[0m");
+            crate::bench::run_kernel_benchmarks();
         }
         "clear" => {
             print!("\x1b[2J\x1b[H");

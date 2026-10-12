@@ -1,9 +1,10 @@
 //! Controlador Gráfico del Framebuffer y Consola Visual para AgentOS
 //! Renderizado directo sobre VRAM lineal UEFI (resolución nativa y aceleración por software).
+//! Protegido contra concurrencia con interrupciones mediante `IrqSpinLock`.
 
 use crate::limine::LimineFramebuffer;
 use crate::font::{FONT_8X8, FONT_WIDTH, FONT_HEIGHT};
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::IrqSpinLock;
 
 /// Color RGB en formato de 32 bits (0x00RRGGBB)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,7 +23,7 @@ impl Color {
 }
 
 /// Estado global del Framebuffer activo
-struct FramebufferState {
+pub struct FramebufferState {
     ptr: *mut u8,
     width: usize,
     height: usize,
@@ -32,157 +33,178 @@ struct FramebufferState {
     cursor_y: usize,
 }
 
-struct FbWrapper(core::cell::UnsafeCell<Option<FramebufferState>>);
-unsafe impl Sync for FbWrapper {}
+unsafe impl Send for FramebufferState {}
 
-static FB_STATE: FbWrapper = FbWrapper(core::cell::UnsafeCell::new(None));
-static FB_INITIALIZED: AtomicBool = AtomicBool::new(false);
+impl FramebufferState {
+    pub fn draw_pixel(&mut self, x: usize, y: usize, color: Color) {
+        if x < self.width && y < self.height {
+            let pixel_offset = y * self.pitch + x * (self.bpp / 8);
+            unsafe {
+                let target = self.ptr.add(pixel_offset) as *mut u32;
+                *target = color.0;
+            }
+        }
+    }
+
+    pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
+        for cy in y..(y + h) {
+            for cx in x..(x + w) {
+                self.draw_pixel(cx, cy, color);
+            }
+        }
+    }
+
+    pub fn draw_char(&mut self, c: char, x: usize, y: usize, fg: Color, bg: Color) {
+        let ascii = (c as usize).min(127);
+        let glyph = FONT_8X8[ascii];
+
+        for row in 0..FONT_HEIGHT {
+            let byte = glyph[row];
+            for col in 0..FONT_WIDTH {
+                let is_set = (byte & (0x80 >> col)) != 0;
+                let color = if is_set { fg } else { bg };
+                self.draw_pixel(x + col, y + row, color);
+            }
+        }
+    }
+
+    pub fn draw_string(&mut self, text: &str, mut x: usize, y: usize, fg: Color, bg: Color) {
+        for c in text.chars() {
+            if c == '\n' {
+                continue;
+            }
+            self.draw_char(c, x, y, fg, bg);
+            x += FONT_WIDTH;
+        }
+    }
+
+    pub fn clear_screen(&mut self, color: Color) {
+        let (w, h) = (self.width, self.height);
+        self.fill_rect(0, 0, w, h, color);
+    }
+
+    pub fn console_print(&mut self, text: &str, fg: Color) {
+        for c in text.chars() {
+            if c == '\n' {
+                self.cursor_x = 24;
+                self.cursor_y += FONT_HEIGHT + 4;
+                if self.cursor_y >= self.height.saturating_sub(40) {
+                    self.cursor_y = 60;
+                }
+                continue;
+            }
+
+            self.draw_char(c, self.cursor_x, self.cursor_y, fg, Color::BLACK);
+            self.cursor_x += FONT_WIDTH;
+
+            if self.cursor_x >= self.width.saturating_sub(40) {
+                self.cursor_x = 24;
+                self.cursor_y += FONT_HEIGHT + 4;
+            }
+        }
+    }
+
+    pub fn draw_ui_chrome(&mut self) {
+        let width = self.width;
+        let height = self.height;
+
+        // Barra superior (Top Bar)
+        self.fill_rect(0, 0, width, 32, Color::DARK_GRAY);
+        self.draw_string("  AGENTOS ", 12, 12, Color::CYAN, Color::DARK_GRAY);
+        self.draw_string("| Causal Microkernel v0.2.0 (x86-64 Bare-Metal UEFI)", 100, 12, Color::WHITE, Color::DARK_GRAY);
+        self.draw_string("[ SECURE RING 0 ]", width.saturating_sub(180), 12, Color::GREEN, Color::DARK_GRAY);
+
+        // Barra de estado inferior (Bottom Bar)
+        self.fill_rect(0, height.saturating_sub(24), width, 24, Color::DARK_GRAY);
+        self.draw_string("  Limine Boot OK  |  UART COM1 [0x3F8]  |  Merkle-DAG Active  |  Preempt OK", 12, height.saturating_sub(16), Color::LIGHT_GRAY, Color::DARK_GRAY);
+    }
+
+    pub fn draw_panel(&mut self, x: usize, y: usize, w: usize, h: usize, title: &str, border_color: Color) {
+        self.fill_rect(x, y, w, h, Color::DARK_GRAY);
+        // Borde de 1 píxel
+        self.fill_rect(x, y, w, 1, border_color);
+        self.fill_rect(x, y + h.saturating_sub(1), w, 1, border_color);
+        self.fill_rect(x, y, 1, h, border_color);
+        self.fill_rect(x + w.saturating_sub(1), y, 1, h, border_color);
+
+        // Título
+        self.draw_string(title, x + 10, y + 6, border_color, Color::DARK_GRAY);
+    }
+}
+
+static FB_STATE: IrqSpinLock<Option<FramebufferState>> = IrqSpinLock::new(None);
 
 /// Inicializa el framebuffer gráfico con la información proporcionada por Limine
 pub fn init(fb: &'static LimineFramebuffer) {
-    unsafe {
-        *FB_STATE.0.get() = Some(FramebufferState {
-            ptr: fb.address,
-            width: fb.width as usize,
-            height: fb.height as usize,
-            pitch: fb.pitch as usize,
-            bpp: fb.bpp as usize,
-            cursor_x: 20,
-            cursor_y: 60,
-        });
+    let mut state = FB_STATE.lock();
+    *state = Some(FramebufferState {
+        ptr: fb.address,
+        width: fb.width as usize,
+        height: fb.height as usize,
+        pitch: fb.pitch as usize,
+        bpp: fb.bpp as usize,
+        cursor_x: 20,
+        cursor_y: 60,
+    });
+
+    if let Some(ref mut s) = *state {
+        s.clear_screen(Color::BLACK);
+        s.draw_ui_chrome();
     }
-    FB_INITIALIZED.store(true, Ordering::Release);
-
-    // Limpiar pantalla con el color de fondo de AgentOS
-    clear_screen(Color::BLACK);
-
-    // Dibujar interfaz gráfica inicial
-    draw_ui_chrome();
 }
 
 /// Dibuja un píxel individual en coordenadas (x, y)
 pub fn draw_pixel(x: usize, y: usize, color: Color) {
-    if !FB_INITIALIZED.load(Ordering::Acquire) {
-        return;
-    }
-
-    unsafe {
-        if let Some(ref state) = &*FB_STATE.0.get() {
-            if x < state.width && y < state.height {
-                let pixel_offset = y * state.pitch + x * (state.bpp / 8);
-                let target = state.ptr.add(pixel_offset) as *mut u32;
-                *target = color.0;
-            }
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.draw_pixel(x, y, color);
     }
 }
 
 /// Rellena un rectángulo en coordenadas (x, y) de ancho w y alto h
 pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: Color) {
-    if !FB_INITIALIZED.load(Ordering::Acquire) {
-        return;
-    }
-
-    for cy in y..(y + h) {
-        for cx in x..(x + w) {
-            draw_pixel(cx, cy, color);
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.fill_rect(x, y, w, h, color);
     }
 }
 
 /// Dibuja un carácter ASCII usando la fuente de mapa de bits 8x8
 pub fn draw_char(c: char, x: usize, y: usize, fg: Color, bg: Color) {
-    let ascii = (c as usize).min(127);
-    let glyph = FONT_8X8[ascii];
-
-    for row in 0..FONT_HEIGHT {
-        let byte = glyph[row];
-        for col in 0..FONT_WIDTH {
-            let is_set = (byte & (0x80 >> col)) != 0;
-            let color = if is_set { fg } else { bg };
-            draw_pixel(x + col, y + row, color);
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.draw_char(c, x, y, fg, bg);
     }
 }
 
 /// Dibuja una cadena de texto en coordenadas (x, y)
-pub fn draw_string(text: &str, mut x: usize, y: usize, fg: Color, bg: Color) {
-    for c in text.chars() {
-        if c == '\n' {
-            continue;
-        }
-        draw_char(c, x, y, fg, bg);
-        x += FONT_WIDTH;
+pub fn draw_string(text: &str, x: usize, y: usize, fg: Color, bg: Color) {
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.draw_string(text, x, y, fg, bg);
     }
 }
 
 /// Limpia toda la pantalla con un color uniforme
 pub fn clear_screen(color: Color) {
-    unsafe {
-        if let Some(ref state) = &*FB_STATE.0.get() {
-            fill_rect(0, 0, state.width, state.height, color);
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.clear_screen(color);
     }
 }
 
 /// Imprime una línea en la consola gráfica con avance de cursor
 pub fn console_print(text: &str, fg: Color) {
-    if !FB_INITIALIZED.load(Ordering::Acquire) {
-        return;
-    }
-
-    unsafe {
-        if let Some(ref mut state) = &mut *FB_STATE.0.get() {
-            for c in text.chars() {
-                if c == '\n' {
-                    state.cursor_x = 24;
-                    state.cursor_y += FONT_HEIGHT + 4;
-                    if state.cursor_y >= state.height - 40 {
-                        state.cursor_y = 60; // Reiniciar arriba en desbordamiento
-                    }
-                    continue;
-                }
-
-                draw_char(c, state.cursor_x, state.cursor_y, fg, Color::BLACK);
-                state.cursor_x += FONT_WIDTH;
-
-                if state.cursor_x >= state.width - 40 {
-                    state.cursor_x = 24;
-                    state.cursor_y += FONT_HEIGHT + 4;
-                }
-            }
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.console_print(text, fg);
     }
 }
 
 /// Dibuja el marco visual y paneles de información del sistema
 pub fn draw_ui_chrome() {
-    unsafe {
-        if let Some(ref state) = &*FB_STATE.0.get() {
-            let width = state.width;
-
-            // Barra superior superior (Top Bar)
-            fill_rect(0, 0, width, 32, Color::DARK_GRAY);
-            draw_string("  AGENTOS ", 12, 12, Color::CYAN, Color::DARK_GRAY);
-            draw_string("| Causal Microkernel v0.2.0 (x86-64 Bare-Metal UEFI)", 100, 12, Color::WHITE, Color::DARK_GRAY);
-            draw_string("[ SECURE RING 0 ]", width.saturating_sub(180), 12, Color::GREEN, Color::DARK_GRAY);
-
-            // Barra de estado inferior (Bottom Bar)
-            fill_rect(0, state.height.saturating_sub(24), width, 24, Color::DARK_GRAY);
-            draw_string("  Limine Boot OK  |  UART COM1 [0x3F8]  |  Merkle-DAG Active  |  SchedCP Active", 12, state.height.saturating_sub(16), Color::LIGHT_GRAY, Color::DARK_GRAY);
-        }
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.draw_ui_chrome();
     }
 }
 
 /// Dibuja una tarjeta/panel con borde y título
 pub fn draw_panel(x: usize, y: usize, w: usize, h: usize, title: &str, border_color: Color) {
-    fill_rect(x, y, w, h, Color::DARK_GRAY);
-    // Borde de 1 píxel
-    fill_rect(x, y, w, 1, border_color);
-    fill_rect(x, y + h - 1, w, 1, border_color);
-    fill_rect(x, y, 1, h, border_color);
-    fill_rect(x + w - 1, y, 1, h, border_color);
-
-    // Título
-    draw_string(title, x + 10, y + 6, border_color, Color::DARK_GRAY);
+    if let Some(ref mut s) = *FB_STATE.lock() {
+        s.draw_panel(x, y, w, h, title, border_color);
+    }
 }

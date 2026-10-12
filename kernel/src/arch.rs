@@ -61,3 +61,14 @@ pub fn hlt_loop() -> ! {
         hlt();
     }
 }
+
+/// Lee el contador de sellos de tiempo de la CPU (Time Stamp Counter - TSC)
+#[inline]
+pub fn rdtsc() -> u64 {
+    let low: u32;
+    let high: u32;
+    unsafe {
+        asm!("rdtsc", out("eax") low, out("edx") high, options(nomem, nostack, preserves_flags));
+    }
+    ((high as u64) << 32) | (low as u64)
+}
