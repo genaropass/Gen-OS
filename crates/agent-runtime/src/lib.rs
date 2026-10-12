@@ -13,8 +13,10 @@ pub mod agent;
 pub mod tool;
 pub mod supervisor;
 pub mod multiverse;
+pub mod transaction;
 
 pub use agent::{AgentId, AgentGoal, AgentInstance, AgentStatus};
 pub use tool::{ToolDefinition, ToolRegistry, ToolExecutionResult};
 pub use supervisor::{AgentSupervisor, SupervisorError};
 pub use multiverse::{DreamingEngine, BranchEvaluation};
+pub use transaction::{TransactionCoordinator, TransactionContext, TransactionStatus};

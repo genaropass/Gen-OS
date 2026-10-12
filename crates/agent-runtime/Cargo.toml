@@ -7,5 +7,6 @@ description = "Runtime de Agentes Autonomos, Supervisor de Seguridad y Motor del
 [dependencies]
 causal-core = { path = "../causal-core" }
 capability-engine = { path = "../capability-engine" }
+semantic-fs = { path = "../semantic-fs" }
 
 [dev-dependencies]
