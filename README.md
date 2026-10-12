@@ -1,14 +1,15 @@
-# AgentOS 🪐
-### The First AI-Native Operating System with Hardware Isolation, Causal Merkle-DAG, and Post-Quantum Security
+# GenOS 🪐
+### The AI-Native Operating System with Hardware Isolation, Causal Merkle-DAG, and Post-Quantum Security
+*Created by Genaro Agustín Passero*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build: x86_64](https://img.shields.io/badge/Architecture-x86__64%20Bare--Metal-blue.svg)]()
 [![Rust Stable: 1.99.0](https://img.shields.io/badge/Rust-1.99.0%20Stable-orange.svg)]()
 [![Tests: 57/57 Passed](https://img.shields.io/badge/Tests-57%2F57%20Passed%20(100%25)-green.svg)]()
 
-**AgentOS** is an experimental, purpose-built operating system written in pure Rust (`no_std` microkernel, `std` runtime) where **Autonomous AI Agents are native first-class OS citizens**, not conventional user applications.
+**GenOS** is an experimental, purpose-built operating system written in pure Rust (`no_std` microkernel, `std` runtime) where **Autonomous AI Agents are native first-class OS citizens**, not conventional user applications.
 
-Unlike traditional operating systems (Windows, Linux) designed decades ago for human interaction, AgentOS provides hardware-enforced sandboxing, capability-based security, decentralized information flow control (DIFC), speculative transactional multiverse execution with $O(1)$ rollbacks, and quantum-safe cryptographic audit trails.
+Unlike traditional operating systems (Windows, Linux) designed decades ago for human interaction, GenOS provides hardware-enforced sandboxing, capability-based security, decentralized information flow control (DIFC), speculative transactional multiverse execution with $O(1)$ rollbacks, and quantum-safe cryptographic audit trails.
 
 ---
 
@@ -104,4 +105,4 @@ cargo xtask run
 
 ## ⚖️ License
 
-AgentOS is released under the **MIT License**. See [LICENSE](LICENSE) for details.
+GenOS is released under the **MIT License**. See [LICENSE](LICENSE) for details.
