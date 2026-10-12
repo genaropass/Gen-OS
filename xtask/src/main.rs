@@ -156,7 +156,7 @@ fn run_qemu(test_mode: bool) {
     let ovmf_path = doctor::find_ovmf(&Some(qemu_path.clone()));
     if let Some(ovmf) = ovmf_path {
         println!("[xtask] Firmware UEFI detectado: {}", ovmf.display());
-        cmd.args(["-bios", ovmf.to_str().unwrap()]);
+        cmd.args(["-drive", &format!("if=pflash,format=raw,readonly=on,file={}", ovmf.to_str().unwrap())]);
     } else {
         println!("[xtask] AVISO: Firmware OVMF no detectado en directorios estandar.");
         println!("        QEMU intentara arrancar; para UEFI explicito, coloque OVMF.fd en boot/ o instale QEMU.");

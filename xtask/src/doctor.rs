@@ -134,6 +134,7 @@ pub fn find_qemu() -> Option<PathBuf> {
     let candidates = [
         "qemu-system-x86_64",
         "qemu-system-x86_64.exe",
+        r"E:\qemu\qemu-system-x86_64.exe",
         r"C:\Program Files\qemu\qemu-system-x86_64.exe",
         r"C:\Program Files (x86)\qemu\qemu-system-x86_64.exe",
         r"E:\Genaro\qemu\qemu-system-x86_64.exe",
