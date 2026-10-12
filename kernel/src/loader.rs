@@ -76,7 +76,7 @@ pub fn parse_header(bytes: &[u8]) -> Result<Elf64Header, ElfLoadError> {
     let hdr_ptr = bytes.as_ptr() as *const Elf64Header;
     let hdr = unsafe { *hdr_ptr };
 
-    if &hdr.e_ident[0..4] != ELFMAG {
+    if hdr.e_ident[0..4] != ELFMAG {
         return Err(ElfLoadError::InvalidMagic);
     }
     if hdr.e_ident[4] != ELFCLASS64 {
@@ -156,17 +156,13 @@ pub fn load_elf(
                         core::ptr::write_bytes(dst, 0, 4096);
                     }
                     address_space.map_page(page_virt, p, page_flags)
-                        .map_err(|e| ElfLoadError::PagingError(e))?;
+                        .map_err(ElfLoadError::PagingError)?;
                     p
                 }
             };
 
             // Copiar los datos correspondientes del segmento si se solapan con esta página
-            let page_offset = if phdr.p_vaddr > page_virt {
-                phdr.p_vaddr - page_virt
-            } else {
-                0
-            };
+            let page_offset = phdr.p_vaddr.saturating_sub(page_virt);
 
             if page_virt + page_offset < phdr.p_vaddr + phdr.p_filesz {
                 let seg_offset = (page_virt + page_offset - phdr.p_vaddr) as usize;
@@ -222,7 +218,7 @@ pub fn setup_user_stack(
         }
 
         address_space.map_page(page_virt, phys_addr, stack_flags)
-            .map_err(|e| ElfLoadError::PagingError(e))?;
+            .map_err(ElfLoadError::PagingError)?;
     }
 
     // Retornar stack_top alineado a 16 bytes

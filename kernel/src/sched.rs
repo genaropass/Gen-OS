@@ -38,6 +38,12 @@ impl Scheduler {
     }
 }
 
+impl Default for Scheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static SCHEDULER: IrqSpinLock<Scheduler> = IrqSpinLock::new(Scheduler::new());
 
 /// Inicializa el planificador registrando el hilo principal como tarea en ejecución

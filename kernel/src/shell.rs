@@ -90,12 +90,11 @@ pub fn handle_char(c: u8) {
             }
         }
         // Caracteres imprimibles
-        0x20..=0x7E => {
-            if state.push(c) {
+        0x20..=0x7E
+            if state.push(c) => {
                 // Echo del caracter a la consola serie
                 crate::serial::SERIAL1.write_byte(c);
             }
-        }
         _ => {}
     }
 }

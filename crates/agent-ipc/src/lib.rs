@@ -291,6 +291,12 @@ impl IpcRouter {
     }
 }
 
+impl Default for IpcRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

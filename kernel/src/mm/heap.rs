@@ -50,6 +50,12 @@ impl Spinlock {
     }
 }
 
+impl Default for Spinlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct KernelAllocator {
     lock: Spinlock,
     head: AtomicPtr<BlockHeader>,
@@ -85,6 +91,12 @@ impl KernelAllocator {
     }
 }
 
+impl Default for KernelAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if !self.initialized.load(Ordering::Acquire) {
@@ -104,7 +116,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             if block.is_free && block.size >= req_size {
                 let payload_addr = (curr as usize) + HEADER_SIZE;
                 // Si la alineación requerida ya se cumple:
-                if payload_addr % align == 0 {
+                if payload_addr.is_multiple_of(align) {
                     // ¿Es posible dividir el bloque?
                     let excess = block.size.saturating_sub(req_size);
                     if excess >= HEADER_SIZE + 32 {

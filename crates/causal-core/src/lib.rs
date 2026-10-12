@@ -453,7 +453,7 @@ impl CausalLedger {
         let mut current_level: Vec<[u8; 32]> = self.records.iter().map(|r| r.merkle_hash).collect();
 
         while current_level.len() > 1 {
-            if current_level.len() % 2 != 0 {
+            if !current_level.len().is_multiple_of(2) {
                 let last = *current_level.last().unwrap();
                 current_level.push(last);
             }
@@ -482,7 +482,7 @@ impl CausalLedger {
         let mut audit_path = Vec::new();
 
         while current_level.len() > 1 {
-            if current_level.len() % 2 != 0 {
+            if !current_level.len().is_multiple_of(2) {
                 let last = *current_level.last().unwrap();
                 current_level.push(last);
             }

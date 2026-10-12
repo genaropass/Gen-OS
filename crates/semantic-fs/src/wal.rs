@@ -100,7 +100,7 @@ impl WalRecord {
         let mut records = Vec::new();
 
         while data.len() >= 24 {
-            if &data[0..8] != &WAL_MAGIC {
+            if data[0..8] != WAL_MAGIC {
                 break; // Corrupción o fin del flujo válido
             }
 

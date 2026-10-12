@@ -60,6 +60,12 @@ impl LimineHhdmRequest {
     }
 }
 
+impl Default for LimineHhdmRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub const LIMINE_MEMMAP_USABLE: u64 = 0;
 pub const LIMINE_MEMMAP_RESERVED: u64 = 1;
 pub const LIMINE_MEMMAP_ACPI_RECLAIMABLE: u64 = 2;
@@ -136,6 +142,12 @@ impl LimineMemmapRequest {
     }
 }
 
+impl Default for LimineMemmapRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[repr(C)]
 pub struct LimineFramebuffer {
     pub address: *mut u8,
@@ -205,6 +217,12 @@ impl LimineFramebufferRequest {
         } else {
             unsafe { Some(&*self.response) }
         }
+    }
+}
+
+impl Default for LimineFramebufferRequest {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

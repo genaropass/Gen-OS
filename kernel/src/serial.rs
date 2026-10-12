@@ -24,7 +24,7 @@ impl SerialPort {
             // Habilitar DLAB (divisor baud rate)
             outb(self.port + 3, 0x80);
             // Configurar divisor para 38400 baud (divisor = 3)
-            outb(self.port + 0, 0x03);
+            outb(self.port, 0x03);
             outb(self.port + 1, 0x00);
             // 8 bits, sin paridad, 1 stop bit (8N1)
             outb(self.port + 3, 0x03);
@@ -126,6 +126,12 @@ impl RxRingBuffer {
 
     pub fn is_empty(&self) -> bool {
         self.head == self.tail
+    }
+}
+
+impl Default for RxRingBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

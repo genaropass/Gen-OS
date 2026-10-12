@@ -36,7 +36,7 @@ fn compute_stats(mut samples_ns: Vec<f64>, ops_per_run: usize) -> StatSummary {
     let variance = samples_ns.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n as f64);
     let std_dev = variance.sqrt();
 
-    let median = if n % 2 == 0 {
+    let median = if n.is_multiple_of(2) {
         (samples_ns[n / 2 - 1] + samples_ns[n / 2]) / 2.0
     } else {
         samples_ns[n / 2]

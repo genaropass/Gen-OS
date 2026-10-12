@@ -100,6 +100,12 @@ impl VirtIoNetDriver {
     }
 }
 
+impl Default for VirtIoNetDriver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub static VIRTIO_NET: IrqSpinLock<VirtIoNetDriver> = IrqSpinLock::new(VirtIoNetDriver::new());
 
 /// Escanea los buses PCI en busca del dispositivo de red VirtIO
