@@ -35,24 +35,73 @@ pub enum Reversibility {
     Irreversible,
 }
 
-/// Nivel de confianza y procedencia de datos (Information Flow Control)
+/// Máscaras de contaminación (Taint Tracking) para Information Flow Control
+pub struct TaintMask;
+impl TaintMask {
+    pub const CLEAN: u32 = 0;
+    pub const WEB_UNTRUSTED: u32 = 1 << 0;
+    pub const TOOL_OUTPUT: u32 = 1 << 1;
+    pub const SPECULATIVE_BRANCH: u32 = 1 << 2;
+    pub const ADVERSARIAL_INJECTION: u32 = 1 << 3;
+}
+
+/// Nivel de confianza y procedencia de datos (Information Flow Control / DIFC)
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SecurityLabel {
-    /// Nivel de confidencialidad (quién puede leerlo)
+    /// Nivel de confidencialidad (quién puede leerlo: mayor número = más secreto)
     pub confidentiality: u16,
     /// Nivel de integridad (0 = entrada web no confiable, 100 = código firmado del kernel)
     pub integrity: u16,
+    /// Máscara de bits de contaminación (taint tracking)
+    pub taint_mask: u32,
 }
 
 impl SecurityLabel {
-    pub const TRUSTED_KERNEL: Self = Self { confidentiality: 0, integrity: 100 };
-    pub const UNTRUSTED_EXTERNAL: Self = Self { confidentiality: 0, integrity: 10 };
+    pub const TRUSTED_KERNEL: Self = Self {
+        confidentiality: 0,
+        integrity: 100,
+        taint_mask: TaintMask::CLEAN,
+    };
+    pub const UNTRUSTED_EXTERNAL: Self = Self {
+        confidentiality: 0,
+        integrity: 10,
+        taint_mask: TaintMask::WEB_UNTRUSTED,
+    };
 
-    /// Propagación conservadora de integridad (el resultado hereda la menor integridad)
+    pub const fn new(confidentiality: u16, integrity: u16, taint_mask: u32) -> Self {
+        Self {
+            confidentiality,
+            integrity,
+            taint_mask,
+        }
+    }
+
+    /// Teorema de No-Interferencia de Bell-LaPadula y Biba (DIFC)
+    /// Un flujo desde `self` hacia `target` es admisible si y solo si:
+    /// 1. self.confidentiality <= target.confidentiality (No leer hacia arriba / No escribir hacia abajo)
+    /// 2. self.integrity >= target.integrity (No escribir hacia arriba en integridad sin autorización)
+    /// 3. Toda contaminación activa en self está expresamente permitida en target
+    pub fn can_flow_to(&self, target: &Self) -> bool {
+        self.confidentiality <= target.confidentiality
+            && self.integrity >= target.integrity
+            && ((self.taint_mask & !target.taint_mask) == 0)
+    }
+
+    /// Propagación conservadora de etiquetas (retículo DIFC)
     pub fn combine(&self, other: &Self) -> Self {
         Self {
             confidentiality: self.confidentiality.max(other.confidentiality),
             integrity: self.integrity.min(other.integrity),
+            taint_mask: self.taint_mask | other.taint_mask,
+        }
+    }
+
+    /// Desclasificación controlada mediante capacidad con derecho DECLASSIFY
+    pub fn declassify(&self, mask_to_clear: u32) -> Self {
+        Self {
+            confidentiality: self.confidentiality,
+            integrity: self.integrity,
+            taint_mask: self.taint_mask & !mask_to_clear,
         }
     }
 }

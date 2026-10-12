@@ -70,6 +70,7 @@ pub struct IpcChannel {
     pub endpoint_a: AgentId,
     pub endpoint_b: AgentId,
     pub allow_untrusted: bool,
+    pub max_confidentiality: u16,
     pub queue: VecDeque<IpcMessage>,
 }
 
@@ -81,6 +82,7 @@ pub enum IpcError {
     CapabilityDenied,
     TaintedSenderBlocked,
     QueueFull,
+    FlowPolicyViolation,
 }
 
 /// Router central del Bus IPC de Agentes
@@ -104,6 +106,18 @@ impl IpcRouter {
         endpoint_b: AgentId,
         allow_untrusted: bool,
     ) -> (ChannelId, ObjectId) {
+        let max_conf = if allow_untrusted { 10 } else { 100 };
+        self.create_channel_with_confidentiality(endpoint_a, endpoint_b, allow_untrusted, max_conf)
+    }
+
+    /// Crea un canal con nivel máximo de confidencialidad explícito (DIFC)
+    pub fn create_channel_with_confidentiality(
+        &mut self,
+        endpoint_a: AgentId,
+        endpoint_b: AgentId,
+        allow_untrusted: bool,
+        max_confidentiality: u16,
+    ) -> (ChannelId, ObjectId) {
         let ch_id = ChannelId(NEXT_CHANNEL_ID.fetch_add(1, Ordering::Relaxed));
         let obj_id = ObjectId(ch_id.0 + 10_000);
 
@@ -113,6 +127,7 @@ impl IpcRouter {
             endpoint_a,
             endpoint_b,
             allow_untrusted,
+            max_confidentiality,
             queue: VecDeque::new(),
         };
 
@@ -158,13 +173,27 @@ impl IpcRouter {
             _ => return Err(IpcError::CapabilityDenied),
         }
 
-        // 3. Information Flow Control (IFC): Bloqueo de fuga de datos contaminados si el canal es estricto
-        let is_sender_tainted = sender.is_tainted();
-        if is_sender_tainted && !ch.allow_untrusted {
+        // 3. Information Flow Control (IFC): Teorema de No-Interferencia y Desclasificación
+        let mut effective_label = sender.security_label;
+        let has_declassify = sender.cspace.verify(cap_token, Permissions::DECLASSIFY).is_ok();
+        if has_declassify {
+            effective_label = effective_label.declassify(
+                causal_core::TaintMask::WEB_UNTRUSTED | causal_core::TaintMask::TOOL_OUTPUT,
+            );
+        }
+
+        // Bloqueo de fuga de confidencialidad a canales con menor clasificación
+        if effective_label.confidentiality > ch.max_confidentiality {
+            return Err(IpcError::FlowPolicyViolation);
+        }
+
+        // Bloqueo de contaminación hacia canales de alta integridad sin desclasificación
+        let is_effectively_tainted = (effective_label.taint_mask != 0) || (sender.is_tainted() && !has_declassify);
+        if is_effectively_tainted && !ch.allow_untrusted {
             return Err(IpcError::TaintedSenderBlocked);
         }
 
-        let taint_label = if is_sender_tainted {
+        let taint_label = if is_effectively_tainted {
             SecurityLabel::UNTRUSTED_EXTERNAL
         } else {
             SecurityLabel::TRUSTED_KERNEL

@@ -67,7 +67,7 @@ impl AgentInstance {
             cspace,
             current_branch: BranchId(0),
             // Todo agente inicia con confianza de dominio local
-            security_label: SecurityLabel { confidentiality: 10, integrity: 90 },
+            security_label: SecurityLabel { confidentiality: 10, integrity: 90, taint_mask: 0 },
             step_count: 0,
             tokens_used: 0,
             context_history: Vec::new(),

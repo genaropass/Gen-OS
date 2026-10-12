@@ -24,7 +24,7 @@ fn test_scenario_1_safe_goal_execution_and_commit() {
         local_file_obj,
         Permissions::READ,
         false, // No es efecto secundario externo
-        SecurityLabel { confidentiality: 10, integrity: 90 }, // Fuente confiable
+        SecurityLabel { confidentiality: 10, integrity: 90, taint_mask: 0 }, // Fuente confiable
     );
 
     // Otorgar capacidad al agente

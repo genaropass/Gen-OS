@@ -1,10 +1,13 @@
 //! # capability-engine
 //!
-//! Subsistema formal de capacidades para AgentOS.
-//! Implementa seguridad de privilegio mínimo por diseño:
-//! - Ningún dominio accede a un objeto sin un token de capacidad explícito.
-//! - Atenuación de permisos (una capacidad derivada nunca puede tener más permisos que su padre).
-//! - Revocación en cascada (al revocar un padre, se destruyen todos los hijos en el árbol).
+//! Subsistema formal de capacidades v2 para AgentOS.
+//! Implementa seguridad de privilegio mínimo por diseño y contención adversarial:
+//! - Ningún dominio accede a un recurso sin un token de capacidad explícito.
+//! - Tokens con época/generación contra Use-After-Revocation (`CapId { slot, generation }`).
+//! - Derechos de acceso finos: READ, WRITE, EXECUTE, GRANT, REVOKE, DECLASSIFY.
+//! - Atenuación estricta de permisos: `child_rights <= parent_rights`.
+//! - Revocación en cascada en árbol con avance de época por ranura.
+//! - CSpace con capacidad máxima acotada para prevenir DoS por agotamiento de recursos.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -14,13 +17,31 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 /// Identificador único de un objeto del sistema (memoria, endpoint, archivo, agente)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ObjectId(pub u64);
 
-/// Identificador de una capacidad en el espacio de capacidades
+/// Identificador de una capacidad en el espacio de capacidades.
+/// Empaqueta (generation: u32, slot: u32) en 64 bits para protección temporal contra Use-After-Revocation.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct CapId(pub u64);
+
+impl CapId {
+    pub const fn new(slot: u32, generation: u32) -> Self {
+        Self(((generation as u64) << 32) | (slot as u64))
+    }
+
+    pub const fn slot(&self) -> u32 {
+        (self.0 & 0xFFFF_FFFF) as u32
+    }
+
+    pub const fn generation(&self) -> u32 {
+        (self.0 >> 32) as u32
+    }
+}
 
 /// Máscara de permisos por capacidades
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,11 +66,12 @@ impl Permissions {
     pub const READ: Self = Self(1 << 0);
     pub const WRITE: Self = Self(1 << 1);
     pub const EXECUTE: Self = Self(1 << 2);
-    pub const GRANT: Self = Self(1 << 3);   // Permiso de delegar/derivar a otros
-    pub const REVOKE: Self = Self(1 << 4);  // Permiso de revocar derivados
+    pub const GRANT: Self = Self(1 << 3);      // Permiso de delegar/derivar a otros
+    pub const REVOKE: Self = Self(1 << 4);     // Permiso de revocar derivados
+    pub const DECLASSIFY: Self = Self(1 << 5); // Permiso de desclasificar datos contaminados (IFC)
 
     pub const ALL: Self = Self(
-        Self::READ.0 | Self::WRITE.0 | Self::EXECUTE.0 | Self::GRANT.0 | Self::REVOKE.0
+        Self::READ.0 | Self::WRITE.0 | Self::EXECUTE.0 | Self::GRANT.0 | Self::REVOKE.0 | Self::DECLASSIFY.0
     );
 
     pub fn contains(&self, other: Self) -> bool {
@@ -62,7 +84,7 @@ impl Permissions {
 }
 
 /// Token de Capacidad
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Capability {
     pub id: CapId,
     pub object_id: ObjectId,
@@ -79,20 +101,41 @@ pub enum CapError {
     PermissionDenied,
     AttenuationViolation, // Intento de derivar con más permisos que el padre
     InvalidSlot,
+    EpochMismatch,        // Token revocado o caduco (Use-After-Revocation)
+    CSpaceFull,           // Límite de tabla alcanzado (Mitigación DoS)
 }
 
-/// Tabla de Capacidades (CSpace)
-#[derive(Default, Debug)]
+/// Ranura interna en la tabla de capacidades con época para validación de generación
+#[derive(Clone, Debug)]
+pub struct CapSlot {
+    pub generation: u32,
+    pub cap: Option<Capability>,
+}
+
+/// Tabla de Capacidades (CSpace) con protección temporal y límite de capacidad
+#[derive(Debug)]
 pub struct CSpace {
-    caps: Vec<Capability>,
-    next_id: u64,
+    slots: Vec<CapSlot>,
+    max_slots: usize,
+}
+
+impl Default for CSpace {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CSpace {
+    pub const DEFAULT_MAX_SLOTS: usize = 1024;
+
     pub fn new() -> Self {
+        Self::with_capacity(Self::DEFAULT_MAX_SLOTS)
+    }
+
+    pub fn with_capacity(max_slots: usize) -> Self {
         Self {
-            caps: Vec::new(),
-            next_id: 1,
+            slots: Vec::new(),
+            max_slots,
         }
     }
 
@@ -103,9 +146,16 @@ impl CSpace {
         permissions: Permissions,
         owner: u32,
     ) -> CapId {
-        let id = CapId(self.next_id);
-        self.next_id += 1;
+        let (slot_idx, gen) = if let Some((idx, slot)) = self.slots.iter_mut().enumerate().find(|(_, s)| s.cap.is_none()) {
+            slot.generation = slot.generation.wrapping_add(1);
+            (idx as u32, slot.generation)
+        } else {
+            let idx = self.slots.len() as u32;
+            self.slots.push(CapSlot { generation: 1, cap: None });
+            (idx, 1)
+        };
 
+        let id = CapId::new(slot_idx, gen);
         let cap = Capability {
             id,
             object_id,
@@ -114,7 +164,7 @@ impl CSpace {
             owner,
         };
 
-        self.caps.push(cap);
+        self.slots[slot_idx as usize].cap = Some(cap);
         id
     }
 
@@ -126,8 +176,13 @@ impl CSpace {
         new_owner: u32,
     ) -> Result<CapId, CapError> {
         let (parent_obj, parent_perms) = {
-            let parent = self.get(parent_id).ok_or(CapError::NotFound)?;
-            
+            let slot_idx = parent_id.slot() as usize;
+            let slot = self.slots.get(slot_idx).ok_or(CapError::NotFound)?;
+            if slot.generation != parent_id.generation() {
+                return Err(CapError::EpochMismatch);
+            }
+            let parent = slot.cap.as_ref().ok_or(CapError::NotFound)?;
+
             // Requiere permiso de GRANT para delegar
             if !parent.permissions.contains(Permissions::GRANT) {
                 return Err(CapError::PermissionDenied);
@@ -141,9 +196,20 @@ impl CSpace {
             (parent.object_id, requested_perms)
         };
 
-        let child_id = CapId(self.next_id);
-        self.next_id += 1;
+        if self.len() >= self.max_slots {
+            return Err(CapError::CSpaceFull);
+        }
 
+        let (slot_idx, gen) = if let Some((idx, slot)) = self.slots.iter_mut().enumerate().find(|(_, s)| s.cap.is_none()) {
+            slot.generation = slot.generation.wrapping_add(1);
+            (idx as u32, slot.generation)
+        } else {
+            let idx = self.slots.len() as u32;
+            self.slots.push(CapSlot { generation: 1, cap: None });
+            (idx, 1)
+        };
+
+        let child_id = CapId::new(slot_idx, gen);
         let child_cap = Capability {
             id: child_id,
             object_id: parent_obj,
@@ -152,23 +218,33 @@ impl CSpace {
             owner: new_owner,
         };
 
-        self.caps.push(child_cap);
+        self.slots[slot_idx as usize].cap = Some(child_cap);
         Ok(child_id)
     }
 
-    /// Retorna una referencia a la lista de capacidades del espacio
-    pub fn caps(&self) -> &[Capability] {
-        &self.caps
+    /// Retorna una lista con las capacidades actualmente activas
+    pub fn caps(&self) -> Vec<Capability> {
+        self.slots.iter().filter_map(|s| s.cap.clone()).collect()
     }
 
-    /// Obtiene una capacidad por ID
+    /// Obtiene una capacidad por ID comprobando concordancia de época
     pub fn get(&self, id: CapId) -> Option<&Capability> {
-        self.caps.iter().find(|c| c.id == id)
+        let slot_idx = id.slot() as usize;
+        let slot = self.slots.get(slot_idx)?;
+        if slot.generation != id.generation() {
+            return None; // Época no coincide: token caducado o revocado
+        }
+        slot.cap.as_ref()
     }
 
-    /// Verifica si una capacidad existe y tiene los permisos requeridos
+    /// Verifica si una capacidad existe, no fue revocada y posee los permisos requeridos
     pub fn verify(&self, id: CapId, required: Permissions) -> Result<ObjectId, CapError> {
-        let cap = self.get(id).ok_or(CapError::NotFound)?;
+        let slot_idx = id.slot() as usize;
+        let slot = self.slots.get(slot_idx).ok_or(CapError::NotFound)?;
+        if slot.generation != id.generation() {
+            return Err(CapError::EpochMismatch);
+        }
+        let cap = slot.cap.as_ref().ok_or(CapError::NotFound)?;
         if cap.permissions.contains(required) {
             Ok(cap.object_id)
         } else {
@@ -178,37 +254,48 @@ impl CSpace {
 
     /// Revoca recursivamente una capacidad y todos sus descendientes en el árbol
     pub fn revoke(&mut self, root_id: CapId) -> Result<usize, CapError> {
-        // Verificar que existe
-        if self.get(root_id).is_none() {
-            return Err(CapError::NotFound);
+        let root_slot_idx = root_id.slot() as usize;
+        let root_slot = self.slots.get(root_slot_idx).ok_or(CapError::NotFound)?;
+        if root_slot.generation != root_id.generation() || root_slot.cap.is_none() {
+            return Err(CapError::EpochMismatch);
         }
 
-        // Buscar todos los descendientes en anchura/profundidad
-        let mut to_revoke = Vec::new();
-        to_revoke.push(root_id);
+        // Buscar todos los descendientes recursivamente en el árbol
+        let mut to_revoke_slots: Vec<usize> = Vec::new();
+        to_revoke_slots.push(root_slot_idx);
 
         let mut i = 0;
-        while i < to_revoke.len() {
-            let current = to_revoke[i];
-            for cap in &self.caps {
-                if cap.parent == Some(current) && !to_revoke.contains(&cap.id) {
-                    to_revoke.push(cap.id);
+        while i < to_revoke_slots.len() {
+            let parent_slot_idx = to_revoke_slots[i];
+            let parent_id = self.slots[parent_slot_idx].cap.as_ref().map(|c| c.id);
+            if let Some(p_id) = parent_id {
+                for (idx, slot) in self.slots.iter().enumerate() {
+                    if let Some(ref cap) = slot.cap {
+                        if cap.parent == Some(p_id) && !to_revoke_slots.contains(&idx) {
+                            to_revoke_slots.push(idx);
+                        }
+                    }
                 }
             }
             i += 1;
         }
 
-        let count = to_revoke.len();
-        self.caps.retain(|c| !to_revoke.contains(&c.id));
+        let count = to_revoke_slots.len();
+        for slot_idx in to_revoke_slots {
+            let slot = &mut self.slots[slot_idx];
+            slot.cap = None;
+            slot.generation = slot.generation.wrapping_add(1); // Invalida de inmediato todos los tokens antiguos
+        }
+
         Ok(count)
     }
 
     pub fn len(&self) -> usize {
-        self.caps.len()
+        self.slots.iter().filter(|s| s.cap.is_some()).count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.caps.is_empty()
+        self.len() == 0
     }
 }
 
@@ -232,7 +319,6 @@ mod tests {
         let mut cspace = CSpace::new();
         let obj = ObjectId(100);
 
-        // Padre con solo LECTURA y GRANT
         let parent = cspace.mint_root(obj, Permissions::READ | Permissions::GRANT, 1);
 
         // Intentar derivar con ESCRITURA (debe fallar por atenuación)
@@ -245,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cascade_revocation() {
+    fn test_cascade_revocation_and_epoch_mismatch() {
         let mut cspace = CSpace::new();
         let obj = ObjectId(500);
 
@@ -256,13 +342,33 @@ mod tests {
 
         assert_eq!(cspace.len(), 4);
 
-        // Revocar child1 debe revocar a child1 y a grandchild, pero dejar a root y child2 intactos
+        // Revocar child1 revoca child1 y grandchild
         let revoked = cspace.revoke(child1).unwrap();
-        assert_eq!(revoked, 2); // child1 + grandchild
+        assert_eq!(revoked, 2);
 
         assert!(cspace.get(root).is_some());
         assert!(cspace.get(child2).is_some());
         assert!(cspace.get(child1).is_none());
         assert!(cspace.get(grandchild).is_none());
+
+        // Verificación de los tokens revocados debe retornar EpochMismatch
+        assert_eq!(cspace.verify(child1, Permissions::READ), Err(CapError::EpochMismatch));
+        assert_eq!(cspace.verify(grandchild, Permissions::READ), Err(CapError::EpochMismatch));
+    }
+
+    #[test]
+    fn test_cspace_bounded_capacity_dos_mitigation() {
+        let mut cspace = CSpace::with_capacity(3);
+        let obj = ObjectId(777);
+
+        let cap1 = cspace.mint_root(obj, Permissions::ALL, 1);
+        let cap2 = cspace.derive(cap1, Permissions::READ | Permissions::GRANT, 1).unwrap();
+        let _cap3 = cspace.derive(cap2, Permissions::READ, 1).unwrap();
+
+        assert_eq!(cspace.len(), 3);
+
+        // Intentar agregar una 4ta capacidad en un CSpace de límite 3 debe fallar con CSpaceFull
+        let overflow = cspace.derive(cap1, Permissions::READ, 1);
+        assert_eq!(overflow, Err(CapError::CSpaceFull));
     }
 }

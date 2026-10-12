@@ -195,6 +195,7 @@ impl<'a> AgentVm<'a> {
                         SecurityLabel {
                             confidentiality: 10,
                             integrity: *integrity,
+                            taint_mask: 0,
                         },
                         effect,
                     );
@@ -219,11 +220,9 @@ impl<'a> AgentVm<'a> {
                     let tool = self.tools.find(tool_name).ok_or_else(|| VmError::ToolNotFound(tool_name.clone()))?;
 
                     // Buscar token de capacidad válido en el CSpace
-                    let cap = self.agent.cspace.caps().iter().find(|c| {
+                    let cap_id = self.agent.cspace.caps().into_iter().find(|c| {
                         c.object_id == tool.target_object && c.permissions.contains(tool.required_permissions)
-                    }).ok_or(VmError::CapabilityViolation)?;
-
-                    let cap_id = cap.id;
+                    }).map(|c| c.id).ok_or(VmError::CapabilityViolation)?;
                     let result: ToolExecutionResult = self.supervisor
                         .invoke_tool(self.agent, tool, cap_id, payload)
                         .map_err(|_| VmError::CapabilityViolation)?;
