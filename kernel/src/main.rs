@@ -21,6 +21,7 @@ pub mod shell;
 pub mod bench;
 pub mod loader;
 pub mod agent;
+pub mod drivers;
 
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -228,6 +229,16 @@ pub extern "C" fn _start() -> ! {
         );
         let _ = agent::suspend_agent(spawned_id);
         let _ = agent::resume_agent(spawned_id);
+    }
+
+    // 11c. Inicializar Almacenamiento Persistente en Bloque (VirtIO-Blk / Ramdisk)
+    drivers::virtio_blk::init();
+    let mut test_sector = [0u8; 512];
+    test_sector[0..16].copy_from_slice(b"AGENTOS_BLOCK_OK");
+    let _ = drivers::virtio_blk::write_sector(0, &test_sector);
+    let mut read_back = [0u8; 512];
+    if drivers::virtio_blk::read_sector(0, &mut read_back).is_ok() {
+        println!("[AgentOS::Storage] Autotest lectura/escritura sector 0 LBA exitoso");
     }
 
     // 12. Inicializar Planificador Preemptivo de Ring 0

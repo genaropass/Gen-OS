@@ -27,6 +27,9 @@ use std::collections::BTreeMap;
 
 use causal_core::{DomainId, BranchId, EffectId, SecurityLabel};
 
+pub mod wal;
+pub use wal::{WalOp, WalRecord, JournaledFs};
+
 /// Vector semántico de dimensión fija en memoria para búsqueda vectorial en el kernel/runtime
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct EmbeddingVector<const D: usize = 32> {
