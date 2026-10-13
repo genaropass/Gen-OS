@@ -58,6 +58,7 @@
 }
 
 \begin{document}
+\emergencystretch=2em
 
 \title{GenOS: An AI-Native Microkernel Architecture with Hardware-Isolated Capabilities, Decentralized Information Flow Control, and Post-Quantum Causal Verification}
 
@@ -145,26 +146,31 @@ GenOS is implemented from first principles in 100\% stable Rust (\texttt{rustc 1
 
 \begin{figure}[htbp]
 \centering
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=0.4cm,
-    box/.style={rectangle, draw=black!70, fill=blue!5, thick, minimum width=7.5cm, minimum height=0.7cm, align=center, font=\scriptsize\sffamily},
-    kbox/.style={rectangle, draw=green!50!black, fill=green!8, thick, minimum width=7.5cm, minimum height=0.8cm, align=center, font=\scriptsize\sffamily\bfseries},
-    hwbox/.style={rectangle, draw=red!60!black, fill=red!8, thick, minimum width=7.5cm, minimum height=0.65cm, align=center, font=\scriptsize\ttfamily}
+    node distance=0.28cm,
+    box/.style={rectangle, rounded corners=2pt, draw=black!70, fill=blue!5, thick, text width=7.6cm, minimum height=0.75cm, align=center, font=\scriptsize\sffamily},
+    kbox/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!8, thick, text width=7.6cm, minimum height=0.8cm, align=center, font=\scriptsize\sffamily\bfseries},
+    hwbox/.style={rectangle, rounded corners=2pt, draw=red!60!black, fill=red!8, thick, text width=7.6cm, minimum height=0.7cm, align=center, font=\scriptsize\ttfamily}
 ]
-    \node[box] (ring3) {Ring 3 User-Space: Isolated Agent AddressSpaces (PML4) $\mid$ AgentVM / WASM $\mid$ MCP};
-    \node[hwbox, below=0.25cm of ring3] (syscall) {Fast SYSCALL / SYSRET MSRs (STAR, LSTAR, FMASK) + SMAP (stac/clac)};
-    \node[kbox, below=0.25cm of syscall] (ring0) {Ring 0 Microkernel (\#![no\_std]): CSpace v2 $\mid$ DIFC Lattice $\mid$ Multiverse Escrow $\mid$ SchedCP};
-    \node[hwbox, below=0.25cm of ring0] (hw) {x86-64 Hardware Controls: CR0.WP $\mid$ EFER.NXE (W$\oplus$X) $\mid$ CR4.SMEP/SMAP/UMIP $\mid$ Limine UEFI};
+    \node[box] (ring3) {Ring 3 User-Space: Isolated Agent AddressSpaces (PML4)\\AgentVM $\mid$ WebAssembly Sandbox $\mid$ MCP Customs};
+    \node[hwbox, below=0.25cm of ring3] (syscall) {Fast SYSCALL / SYSRET MSRs (STAR, LSTAR, FMASK)\\+ SMAP Guarded Uaccess (stac / clac)};
+    \node[kbox, below=0.25cm of syscall] (ring0) {Ring 0 Microkernel (\#![no\_std]):\\CSpace v2 $\mid$ DIFC Lattice $\mid$ Multiverse Escrow $\mid$ SchedCP};
+    \node[hwbox, below=0.25cm of ring0] (hw) {x86-64 Hardware Controls: CR0.WP $\mid$ EFER.NXE (W$\oplus$X)\\CR4.SMEP / SMAP / UMIP $\mid$ Limine 8.7.0 UEFI};
     \draw[<->, thick] (ring3) -- (syscall);
     \draw[<->, thick] (syscall) -- (ring0);
     \draw[<->, thick] (ring0) -- (hw);
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Architectural overview of GenOS: Limine UEFI bootloader, higher-half microkernel in Ring 0, hardware control registers, and Ring 3 isolated Agent AddressSpaces governed by CSpace, DIFC, and the Multiverse Escrow Engine.}
 \label{fig:arch}
 \end{figure}
 
 \subsection{UEFI Boot Pipeline and Higher-Half Initialization}
-Bootstrapping is governed by the Limine 8.7.0 boot protocol under UEFI specification. The kernel binary is embedded alongside Limine's bootloader image (\texttt{boot/limine/BOOTX64.EFI}), verified via cryptographic digest matching SHA-256 hash \texttt{51ca2b20ed14bbc678a396cdfb0c1d941acbc155cabebc9bfafabe4cdae1be73}. 
+Bootstrapping is governed by the Limine 8.7.0 boot protocol under UEFI specification. The kernel binary is embedded alongside Limine's bootloader image (\texttt{boot/\allowbreak limine/\allowbreak BOOTX64.EFI}), verified via cryptographic digest matching SHA-256 hash:
+\begin{center}
+\scriptsize\texttt{51ca2b20ed14bbc678a396cdfb0c1d94\\1acbc155cabebc9bfafabe4cdae1be73}
+\end{center}
 
 Upon transfer of execution, the processor is in 64-bit Long Mode. GenOS maps its kernel code and data into the higher-half virtual address space:
 $$\text{VirtualBase} = \texttt{0xFFFFFFFF80000000}$$
@@ -263,25 +269,32 @@ $$L_1 \sqsubseteq L_2 \iff (C_1 \le C_2) \ \land \ (I_1 \ge I_2)$$
 
 \begin{figure}[htbp]
 \centering
+\resizebox{0.92\columnwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=0.8cm,
-    lbox/.style={rectangle, rounded corners, draw=black!70, fill=orange!10, thick, minimum width=2.4cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily}
+    node distance=0.6cm,
+    lbox/.style={rectangle, rounded corners, draw=black!70, fill=orange!10, thick, text width=2.8cm, minimum height=0.65cm, align=center, font=\scriptsize\sffamily}
 ]
     \node[lbox, fill=red!12] (top) {$\langle C=100, I=0 \rangle$\\Secret \& Tainted};
-    \node[lbox, below left=0.6cm and 0.4cm of top] (left) {$\langle C=100, I=100 \rangle$\\Sovereign Kernel};
-    \node[lbox, below right=0.6cm and 0.4cm of top] (right) {$\langle C=0, I=0 \rangle$\\Public Untrusted Web};
-    \node[lbox, fill=green!12, below right=0.6cm and 0.4cm of left] (bot) {$\langle C=0, I=100 \rangle$\\Public Verified System};
+    \node[lbox, below left=0.55cm and 0.25cm of top] (left) {$\langle C=100, I=100 \rangle$\\Sovereign Kernel};
+    \node[lbox, below right=0.55cm and 0.25cm of top] (right) {$\langle C=0, I=0 \rangle$\\Public Untrusted Web};
+    \node[lbox, fill=green!12, below right=0.55cm and 0.25cm of left] (bot) {$\langle C=0, I=100 \rangle$\\Public Verified System};
     \draw[->, thick] (bot) -- (left) node[midway, left, font=\tiny] {$C \uparrow$};
     \draw[->, thick] (bot) -- (right) node[midway, right, font=\tiny] {$I \downarrow$};
     \draw[->, thick] (left) -- (top) node[midway, left, font=\tiny] {$I \downarrow$};
     \draw[->, thick] (right) -- (top) node[midway, right, font=\tiny] {$C \uparrow$};
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{The GenOS Information Flow Control Lattice: Bell-LaPadula confidentiality ($C$) and Biba integrity ($I$) planes mediating agent data propagation ($L_1 \sqsubseteq L_2 \iff C_1 \le C_2 \land I_1 \ge I_2$).}
 \label{fig:lattice}
 \end{figure}
 
 When Agent $A$ receives a payload with label $L_{\text{payload}}$, the kernel automatically updates $A$'s execution taint:
-$$L_A' = L_A \sqcup L_{\text{payload}} = \langle \max(C_A, C_{\text{payload}}), \min(I_A, I_{\text{payload}}) \rangle$$
+\begin{equation*}
+\begin{aligned}
+L_A' &= L_A \sqcup L_{\text{payload}} \\
+     &= \langle \max(C_A, C_{\text{payload}}), \min(I_A, I_{\text{payload}}) \rangle
+\end{aligned}
+\end{equation*}
 
 \begin{theorem}[\textbf{Indirect Prompt Injection Containment}]
 Let $A_{\text{untrusted}}$ be an agent ingesting an external text source with $I_{\text{source}} = 0$. Let $K_{\text{secure}}$ be a protected kernel service or administrative database requiring $I_{\text{min}} = 80$. Then, no instruction sequence executed by $A_{\text{untrusted}}$ can emit an unmediated write to $K_{\text{secure}}$.
@@ -291,18 +304,19 @@ Upon ingestion of the external text, the agent's integrity is downgraded:
 $$I_{A_{\text{untrusted}}} \leftarrow \min(I_{A_{\text{untrusted}}}, 0) = 0$$
 When $A_{\text{untrusted}}$ attempts to transmit an IPC message to $K_{\text{secure}}$ across channel $\mathcal{C}$, the kernel IPC router verifies the Biba integrity flow requirement:
 $$\text{flow\_allowed} \iff I_{A_{\text{untrusted}}} \ge I_{\text{target}}(\mathcal{C})$$
-Since $0 < 80$, the router terminates the syscall with \texttt{IpcError::TaintedSenderBlocked}. The injected prompt is confined within the tainted domain.
+Since $0 < 80$, the router terminates the syscall with \texttt{IpcError::\allowbreak TaintedSenderBlocked}. The injected prompt is confined within the tainted domain.
 \end{proof}
 
-Declassification across security boundaries is impossible unless the transmitting agent holds an unforgeable capability bearing the explicit permission bit \texttt{Permissions::DECLASSIFY}, granted strictly to formal sanitization services.
+Declassification across security boundaries is impossible unless the transmitting agent holds an unforgeable capability bearing the explicit permission bit \texttt{Permissions::\allowbreak DECLASSIFY}, granted strictly to formal sanitization services.
 
 \subsection{Formal Proof and Mitigation of 7 Canonical Adversarial Attacks}
-Table~\ref{tab:attacks} presents the seven canonical security attacks formally modeled, implemented, and empirically verified within the GenOS test suite (\texttt{crates/agent-ipc/tests/adversarial\_security.rs}).
+Table~\ref{tab:attacks} presents the seven canonical security attacks formally modeled, implemented, and empirically verified within the GenOS test suite (\texttt{crates/\allowbreak agent-ipc/\allowbreak tests/\allowbreak adversarial\_security.rs}).
 
 \begin{table*}[t]
 \centering
 \caption{Formal Verification and Mitigation of 7 Canonical Adversarial Attacks in GenOS}
 \label{tab:attacks}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}llll@{}}
 \toprule
 \textbf{Attack Class} & \textbf{Threat Mechanism} & \textbf{GenOS Kernel Defense Mechanism} & \textbf{Empirical Verdict} \\ \midrule
@@ -313,7 +327,8 @@ Table~\ref{tab:attacks} presents the seven canonical security attacks formally m
 5. \textbf{Taint Injection} & Hostile prompt injected into strict channel & Biba integrity theorem ($I_{\text{sender}} \ge I_{\text{channel}}$) & Blocked (\texttt{TaintedSenderBlocked}) \\
 6. \textbf{Unauthorized Declass.} & Low-integrity agent asserts cleaned data & Explicit capability permission requirement & Blocked (\texttt{CapabilityDenied}) \\
 7. \textbf{CSpace DoS Bomb} & Malicious agent spams capability minting & Bounded CSpace table size with static bounds & Blocked (\texttt{CSpaceFull}) \\ \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
 % =========================================================================
@@ -326,24 +341,26 @@ Because autoregressive models are probabilistic, an agent executing an action pl
 
 \begin{figure}[htbp]
 \centering
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=0.35cm,
-    pbox/.style={rectangle, draw=black!70, fill=blue!6, thick, minimum width=6.8cm, minimum height=0.55cm, align=center, font=\scriptsize\sffamily},
-    cbox/.style={rectangle, draw=green!50!black, fill=green!10, thick, minimum width=3.2cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily\bfseries},
-    abox/.style={rectangle, draw=red!60!black, fill=red!10, thick, minimum width=3.2cm, minimum height=0.6cm, align=center, font=\scriptsize\sffamily\bfseries}
+    node distance=0.3cm,
+    pbox/.style={rectangle, rounded corners=2pt, draw=black!70, fill=blue!6, thick, text width=7.2cm, minimum height=0.55cm, align=center, font=\scriptsize\sffamily},
+    cbox/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!10, thick, text width=3.3cm, minimum height=0.65cm, align=center, font=\scriptsize\sffamily\bfseries},
+    abox/.style={rectangle, rounded corners=2pt, draw=red!60!black, fill=red!10, thick, text width=3.3cm, minimum height=0.65cm, align=center, font=\scriptsize\sffamily\bfseries}
 ]
     \node[pbox] (p1) {1. \texttt{begin\_transaction()} $\rightarrow$ Fork Isolated Branch $\mathcal{B}_k$};
-    \node[pbox, below=0.25cm of p1] (p2) {2--3. \texttt{BranchFS} Copy-on-Write + \texttt{execute\_tool()} Customs};
-    \node[pbox, fill=yellow!15, below=0.25cm of p2] (p3) {4. \texttt{EscrowBuffer}: Hold Irreversible Actions (91.8 ns/op)};
-    \node[pbox, below=0.25cm of p3] (p4) {5. \texttt{verify\_invariants()} $\rightarrow$ Gas, Taint \& Policy Audit};
-    \node[cbox, below left=0.35cm and -1.5cm of p4] (commit) {6. \texttt{commit()}: Flush CoW\\\& Dispatch Hardware I/O};
-    \node[abox, below right=0.35cm and -1.5cm of p4] (abort) {7. \texttt{abort()}: $\mathcal{O}(1)$ Purge\\(Zero External Leakage)};
+    \node[pbox, below=0.22cm of p1] (p2) {2--3. \texttt{BranchFS} Copy-on-Write + \texttt{execute\_tool()} Customs};
+    \node[pbox, fill=yellow!15, below=0.22cm of p2] (p3) {4. \texttt{EscrowBuffer}: Hold Irreversible Actions (91.8 ns/op)};
+    \node[pbox, below=0.22cm of p3] (p4) {5. \texttt{verify\_invariants()} $\rightarrow$ Gas, Taint \& Policy Audit};
+    \node[cbox, below left=0.35cm and -1.6cm of p4] (commit) {6. \texttt{commit()}: Flush CoW\\\& Dispatch Hardware I/O};
+    \node[abox, below right=0.35cm and -1.6cm of p4] (abort) {7. \texttt{abort()}: $\mathcal{O}(1)$ Purge\\(Zero External Leakage)};
     \draw[->, thick] (p1) -- (p2);
     \draw[->, thick] (p2) -- (p3);
     \draw[->, thick] (p3) -- (p4);
     \draw[->, thick, green!50!black] (p4) -- (commit);
     \draw[->, thick, red!60!black] (p4) -- (abort);
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{The 7-Phase Multiverse Transaction Pipeline: Speculative branch fork, BranchFS Copy-on-Write, Escrow Buffer staging for external effects, and atomic $\mathcal{O}(1)$ rollback.}
 \label{fig:multiverse}
 \end{figure}
@@ -543,10 +560,10 @@ To guarantee strict compliance with healthcare regulatory frameworks (Health Ins
 \end{enumerate}
 
 \subsection{Ring 3 WebAssembly (WASM) Sandbox Runtime}
-To execute user-authored scripts and legacy application logic safely within Ring~3, GenOS incorporates an in-kernel WebAssembly runtime (\texttt{crates/agent-vm/src/wasm.rs}):
+To execute user-authored scripts and legacy application logic safely within Ring~3, GenOS incorporates an in-kernel WebAssembly runtime (\texttt{crates/\allowbreak agent-vm/\allowbreak src/\allowbreak wasm.rs}):
 \begin{itemize}
     \item \textbf{Standard Conformance:} Enforces binary validation of standard WebAssembly binaries matching magic bytes \texttt{\textbackslash 0asm} and version 1.
-    \item \textbf{Deterministic Gas Metering:} Every WebAssembly opcode consumes deterministic gas. If an execution loop exceeds its gas allocation, the runtime halts with \texttt{WasmError::OutOfGas}, instantly purging the speculative Multiverse branch and neutralizing denial-of-service attempts.
+    \item \textbf{Deterministic Gas Metering:} Every WebAssembly opcode consumes deterministic gas. If an execution loop exceeds its gas allocation, the runtime halts with \texttt{WasmError::\allowbreak OutOfGas}, instantly purging the speculative Multiverse branch and neutralizing denial-of-service attempts.
     \item \textbf{Linear Memory Sandboxing:} Linear memory is partitioned into 64~KiB pages (\texttt{WASM\_PAGE\_SIZE}), strictly bounded by a configurable ceiling (\texttt{max\_pages}). Any out-of-bounds pointer calculation triggers an immediate memory trap (\texttt{MemoryOutOfBounds}).
     \item \textbf{Multi-Language Runtime Support:} Enables execution of MicroPython (Python 3 interpreter), QuickJS (ECMAScript engine), and SQLite embedded inside user-space agent environments.
 \end{itemize}
@@ -565,7 +582,7 @@ All benchmark measurements were conducted under the following standardized exper
     \item \textbf{Host Architecture:} x86-64 CPU equipped with 24 logical execution threads, 32~GiB RAM.
     \item \textbf{Operating System Host:} Windows 11 x86-64, Rustc 1.99.0 Stable.
     \item \textbf{Target Compilation Profile:} Optimized release profile (\texttt{--release}) with aggressive Link-Time Optimization (\texttt{lto = "fat"}) and code generation units set to 1.
-    \item \textbf{Statistical Rigor:} To eliminate transient CPU frequency scaling artifacts, every benchmark executes 1 preliminary warm-up pass (discarded), followed by $N = 10$ independent statistical runs. Compiler optimization elisions are prevented via \texttt{std::hint::black\_box}.
+    \item \textbf{Statistical Rigor:} To eliminate transient CPU frequency scaling artifacts, every benchmark executes 1 preliminary warm-up pass (discarded), followed by $N = 10$ independent statistical runs. Compiler optimization elisions are prevented via \texttt{std::hint::\allowbreak black\_box}.
     \item \textbf{Reported Metrics:} Median latency (p50), 95th percentile (p95), standard deviation ($\sigma$), and throughput operations per second.
 \end{itemize}
 
@@ -576,6 +593,7 @@ The measured performance across all eight core subsystems of GenOS is summarized
 \centering
 \caption{Empirical Benchmark Results of GenOS Subsystems ($N=10$ Independent Statistical Runs, Release Profile)}
 \label{tab:benchmarks}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
 \textbf{Subsystem Benchmark} & \textbf{Median (p50)} & \textbf{95th Perc. (p95)} & \textbf{Std. Dev. ($\sigma$)} & \textbf{Throughput} & \textbf{Security Invariant Verified} \\ \midrule
@@ -589,7 +607,8 @@ The measured performance across all eight core subsystems of GenOS is summarized
 8. \textbf{AgentVM Bytecode Execution} & \textbf{19.4 ns} & 21.0 ns & 0.62 ns & \textbf{51,546,391 inst/s} & Gas-metered deterministic sandbox \\
 9. \textbf{PQC WOTS+ Key Verification} & \textbf{145.2 $\mu$s} & 151.0 $\mu$s & 2.40 $\mu$s & \textbf{6,888 verif/s} & Shor-immune state verification \\
 10. \textbf{PQC WOTS+ Digital Signing} & \textbf{189.5 $\mu$s} & 198.2 $\mu$s & 3.10 $\mu$s & \textbf{5,278 signs/s} & 128-bit Grover-bounded post-quantum sig \\ \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
 \subsection{Discussion and Analysis}
@@ -610,6 +629,7 @@ The measured performance across all eight core subsystems of GenOS is summarized
 \centering
 \caption{Comparative Architectural Analysis: GenOS versus Representative Operating Systems}
 \label{tab:comparison}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lccccc@{}}
 \toprule
 \textbf{Architectural Dimension} & \textbf{seL4}~\cite{klein2009sel4} & \textbf{HiStar}~\cite{zeldovich2006making} & \textbf{Firecracker}~\cite{agache2020firecracker} & \textbf{AIOS (Rutgers)}~\cite{mei2024aios} & \textbf{GenOS (This Work)} \\ \midrule
@@ -621,7 +641,8 @@ Speculative Reversibility & None & None & Snapshot resume & None & \textbf{Multi
 Post-Quantum Signatures & None & None & None & None & \textbf{WOTS+ ($w=16$, Shor-immune)} \\
 Scheduling Architecture & Strict Priority / MCS & Round-Robin & Linux CFS & LLM-FCFS / Round-Robin & \textbf{SchedCP (EDF + CPI, JFI=0.9996)} \\
 Formal Adversarial Testing & Microkernel proofs & Information flow & Container isolation & Empirical prompts & \textbf{57/57 Tests (7 Attacks Formalized)} \\ \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
 Table~\ref{tab:comparison} provides an objective, multidimensional comparison between GenOS and leading research and production operating systems:
