@@ -1,0 +1,18 @@
+[package]
+name = "genos-guard"
+version = "0.1.0"
+edition = "2021"
+description = "GenOS user-space MCP kernel proxy with DIFC taint tracking, Escrow human approval, and SHA-256 causal ledger"
+license = "MIT"
+
+[[bin]]
+name = "genos-guard"
+path = "src/main.rs"
+
+[[bin]]
+name = "echo_mcp_server"
+path = "src/bin/echo_mcp_server.rs"
+
+[dependencies]
+causal-core = { path = "../causal-core" }
+capability-engine = { path = "../capability-engine" }

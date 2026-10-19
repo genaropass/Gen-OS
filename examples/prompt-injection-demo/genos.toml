@@ -1,0 +1,25 @@
+# Policy for the reproducible Indirect Prompt Injection demo.
+
+[guard]
+approval_timeout_secs = 120
+approval_port = 7878
+ledger_path = "genos-ledger.jsonl"
+
+[defaults]
+unknown_tool_mutating = true
+unknown_tool_taint = ["TOOL_OUTPUT"]
+
+[[tool]]
+name = "read_file"
+taint = []
+mutating = false
+
+[[tool]]
+name = "fetch_url"
+taint = ["WEB_UNTRUSTED"]
+mutating = false
+
+[[tool]]
+name = "write_file"
+taint = []
+mutating = true

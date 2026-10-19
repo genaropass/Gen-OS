@@ -1,0 +1,63 @@
+# GenOS Guard — Example Policy Configuration (genos.toml)
+#
+# GenOS Guard mediates every Model Context Protocol (MCP) `tools/call`
+# between your AI client (Antigravity, Claude Desktop, Cursor) and tool servers.
+
+[guard]
+# Maximum time (in seconds) a dangerous call is held in Escrow awaiting human approval.
+# If the timeout expires, GenOS fails closed and aborts the call in O(1).
+approval_timeout_secs = 120
+
+# Localhost port (127.0.0.1 ONLY) for the Human Approval UI and CLI control endpoints.
+approval_port = 7878
+
+# Path to the append-only, SHA-256 hash-chained causal audit ledger.
+ledger_path = "genos-ledger.jsonl"
+
+[defaults]
+# Fail-closed security posture: any tool not explicitly listed below is treated
+# as both taint-inducing and mutating (held in Escrow if the session is tainted).
+unknown_tool_mutating = true
+unknown_tool_taints = ["TOOL_OUTPUT"]
+
+# ---------------------------------------------------------------------------
+# Tool Rules
+# ---------------------------------------------------------------------------
+
+[[tool]]
+name = "fetch_url"
+# Reading external web pages or untrusted issues taints the agent session.
+taints = ["WEB_UNTRUSTED"]
+mutating = false
+
+[[tool]]
+name = "read_issue"
+taints = ["WEB_UNTRUSTED"]
+mutating = false
+
+[[tool]]
+name = "read_file"
+# Reading local trusted project files does not taint the session.
+taints = []
+mutating = false
+
+[[tool]]
+name = "list_directory"
+taints = []
+mutating = false
+
+[[tool]]
+name = "write_file"
+# Writing files mutates persistent state: allowed when clean, held in Escrow when tainted.
+taints = []
+mutating = true
+
+[[tool]]
+name = "execute_command"
+taints = ["TOOL_OUTPUT"]
+mutating = true
+
+[[tool]]
+name = "send_email"
+taints = []
+mutating = true

@@ -1,65 +1,97 @@
-# TABLA DE EVIDENCIA, AUDITORÍA Y VERIFICACIÓN EMPÍRICA — AGENTOS
+# TABLA DE EVIDENCIA, AUDITORÍA Y VERIFICACIÓN EMPÍRICA — GENOS
 
-**Fecha de Cierre de Auditoría:** 2026-10-12  
-**Entorno de Compilación Host:** Windows x86_64 (`x86_64-pc-windows-msvc`), Rustc 1.99.0 Stable  
-**Target Bare-Metal Microkernel:** `x86_64-unknown-none`  
+**Fecha de Auditoría:** 2026-10-18  
+**Repositorio Oficial:** `https://github.com/genaropass/Gen-OS`  
+**Hardware de Medición:** AMD Ryzen 9 3900X 12-Core Processor (12 núcleos físicos, 24 hilos lógicos), 32 GiB RAM (`31.91 GiB`)  
+**Entorno de Compilación Host:** Windows x86_64 (`x86_64-pc-windows-msvc`), `rustc 1.99.0` Stable  
+**Target Bare-Metal Microkernel:** `x86_64-unknown-none` (`kernel/`)  
 **Bootloader Versionado:** Limine 8.7.0 (`boot/limine/BOOTX64.EFI`), SHA-256: `51ca2b20ed14bbc678a396cdfb0c1d941acbc155cabebc9bfafabe4cdae1be73`  
-**Conformidad de Código:** 100% Rust Stable (Cero `#![feature(...)]` nightly)
+**Conformidad de Código:** 100% Rust Stable (Cero `#![feature(...)]` nightly, cero dependencias externas de `crates.io`)
 
 ---
 
 ## 1. Resumen Ejecutivo de Arquitectura e Implementación
 
-AgentOS ha sido transformado en un sistema operativo nativo para agentes de inteligencia artificial (AI-native OS), respaldado por microkernel x86-64 bare-metal, seguridad por capacidades formales (CSpace v2), control de flujo de información descentralizado (DIFC), criptografía poscuántica (WOTS+), grafo causal inmutable (Merkle-DAG v2) y ejecución transaccional especulativa con reversibilidad garantizada (Multiverse & Escrow).
+**GenOS** materializa el principio arquitectónico *"tool calls are the syscalls of AI agents"* en dos planos complementarios que comparten exactamente los mismos crates formales (`causal-core` y `capability-engine`, `#![no_std]`):
 
-### Estado General de las 13 Fases del Plan Maestro
-
-| Fase | Título y Alcance | Estado | Evidencia y Verificación |
-|---|---|---|---|
-| **Fase 0** | Base Honesta, Limine 8.7.0 y Tooling Host-Side | **100% COMPLETADO** | `cargo xtask doctor` verifica SHA-256 de Limine; benchmarks con $N=10$. |
-| **Fase 1** | CPU, Concurrencia, IDT, Dumps de GPRs y Ring Buffer | **100% COMPLETADO** | `IrqSpinLock<T>`, IST 1 Double Fault, dumps de 15 GPRs, PIT 100 Hz. |
-| **Fase 2** | Memoria Virtual Paginada, NXE, SMEP/SMAP y Guard Pages | **100% COMPLETADO** | Paginación PML4 de 4 niveles, `AddressSpace` por agente, guard pages de 4 KiB. |
-| **Fase 3** | Ring 3, Syscalls MSR, Uaccess Seguro y FXSAVE/FXRSTOR | **100% COMPLETADO** | Descriptores GDT User (0x1B/0x23), SYSCALL/SYSRET MSRs, uaccess seguro, FXSAVE SSE. |
-| **Fase 4** | Objeto Kernel Agente de Primer Nivel | **100% COMPLETADO** | `Agent` kernel struct con PML4 aislado, CSpace, Presupuestos y Causal Root. |
-| **Fase 5** | Capacidades e IFC con Seguridad Adversarial | **100% COMPLETADO** | `CapId` con epoch generacional, Bell-LaPadula/Biba DIFC, 7 tests adversariales. |
-| **Fase 6** | Grafo Causal Merkle-DAG v2 y Trazabilidad `why` | **100% COMPLETADO** | Encadenamiento lineal SHA-256 + Merkle-DAG, `verify_merkle_integrity`, `why(e)`. |
-| **Fase 7** | Ejecución Transaccional, Multiverso y Escrow | **100% COMPLETADO** | Staging de acciones irreversibles, abort $O(1)$, saga compensations en disco. |
-| **Fase 8** | Planificador Consciente de Intenciones (SchedCP) | **100% COMPLETADO** | Selección multidimensional (deadline + integridad + herencia causal), JFI = 0.9996. |
-| **Fase 9** | Contención Estricta de Recursos y OOM | **100% COMPLETADO** | Free-list física en PMM, purga de frames al matar agente, abort por OutOfGas. |
-| **Fase 10** | Almacenamiento Persistente, VirtIO-Blk y WAL | **100% COMPLETADO** | Driver PCI VirtIO-Blk / Ramdisk fallback, WAL con `AGENTWAL` y recuperación crash. |
-| **Fase 11** | Criptografía Poscuántica y Pruebas Zero-Knowledge | **100% COMPLETADO** | Firmas WOTS+ inmunes a Shor, cifrador resistente a Grover, pruebas de inclusión ZK. |
-| **Fase 12** | Benchmarking Estadístico ($N=10$) y Telemetría | **100% COMPLETADO** | `cargo run -p xtask -- bench` reporta p50, p95, $\sigma$ y throughput en 8 módulos. |
-| **Fase 13** | Auditoría Final, Documentación Rigurosa y Cierre | **100% COMPLETADO** | 57/57 tests pasando (100%), cero advertencias del compilador. |
+1. **Plano User-Space en Producción (`crates/genos-guard`):** Un proxy de seguridad en espacio de usuario para el protocolo **Model Context Protocol (MCP, JSON-RPC 2.0 sobre stdio)** que se interpone entre cualquier cliente MCP (Antigravity, Claude Desktop, Cursor) y cualquier servidor MCP. Aplica seguimiento de contaminación DIFC por sesión, capacidades con época generacional (`CSpace`), retención de efectos mutantes en `EscrowManager` con consola HTTP en `127.0.0.1` + CLI (`pending`, `approve`, `deny`, `reset`), y un ledger causal persistente encadenado con SHA-256 (`genos-guard why <seq>`, `genos-guard verify`).
+2. **Plano de Investigación Bare-Metal (`kernel/`):** Un microkernel x86-64 (`#![no_std]`) que bootea vía UEFI/Limine 8.7.0 con paginación PML4 de 4 niveles, protecciones de hardware (`CR0.WP`, `EFER.NXE`, `CR4.SMEP`, `CR4.SMAP`, `CR4.UMIP`), `SYSCALL`/`SYSRET` a Ring 3, `FXSAVE`/`FXRSTOR` y drivers VirtIO-Blk/Net con journaling WAL.
 
 ---
 
-## 2. Resultados Empíricos de Benchmarks (Host Release vs Debug)
+## 2. Resultados Empíricos de Benchmarks en Espacio de Usuario (`--release`)
 
-Metodología: 1 pase de calentamiento descartado + $N=10$ ejecuciones estadísticas independientes sobre CPU x86-64 de 24 hilos lógicos (`black_box` aplicado para evitar elisiones de optimización).
+**Nota Metodológica:** Los microbenchmarks se ejecutan en espacio de usuario (`std::time::Instant`) sobre el procesador host **AMD Ryzen 9 3900X (12C/24T, 32 GiB RAM)** compilados con `cargo run --release -p xtask -- bench` (`lto = true`). Cada prueba realiza 1 pase de calentamiento descartado seguido de $N=10$ ejecuciones estadísticas independientes con `core::hint::black_box`.
 
-| Subsistema Auditado | Métrica Principal | Resultado Release (`--release`) | Resultado Debug (`dev`) | Significado de Seguridad y Rendimiento |
-|---|---|---|---|---|
-| **1. Merkle-DAG (SHA-256)** | Throughput de hashing | **1,729,987 hashes/s** (105.6 MB/s) | 87,810 hashes/s | Inmutabilidad de efectos a nivel de hardware. |
-| | Latencia mediana | **578.0 ns/bloque** ($\sigma = 2.8$ ns) | 11,388.2 ns/bloque | Integridad Merkle instantánea por syscall. |
-| **2. Criptografía Poscuántica (WOTS+)** | Firma WOTS+ | **189.5 µs/firma** (5,278 firmas/s) | 3,730.7 µs/firma | Transiciones de estado seguras contra Shor. |
-| | Verificación WOTS+ | **145.2 µs/verif** (6,888 verif/s) | 2,864.7 µs/verif | Verificación inmediata sin dependencias C. |
-| **3. Motor de Capacidades (CSpace)** | Validación de permiso | **1.9 ns/operación** (519M ops/s) | 35.5 ns/operación | Validación en tiempo constante $O(1)$ sin overhead. |
-| **4. Planificador SchedCP** | Decisión de scheduling | **158.4 ns/decisión** (6.31M dec/s) | 4,324.0 ns/decisión | Priorización causal en tiempo real. |
-| | Equidad de Jain (JFI) | **0.9996** (1.0 = Equidad ideal) | **0.9996** | Ausencia de inanición matemática entre agentes. |
-| **5. Semantic-FS (Vectores & WAL)** | Búsqueda coseno 32-D | **38.0 ns/eval** (26.3M evals/s) | 427.7 ns/eval | Filtrado semántico en Ring 0 / Ring 3. |
-| | WAL Commit Tx | **1.2 µs/tx** (829,483 tx/s) | 4.5 µs/tx | Resiliencia ante fallos catastróficos de energía. |
-| **6. Multiverso & Escrow** | Staging en Escrow | **91.8 ns/acción** (10.9M ops/s) | 170.5 ns/acción | Aislamiento especulativo de efectos externos. |
-| | Abort de Rama | **Purga $O(1)$ instantánea** | **Purga $O(1)$ instantánea** | Cero fugas hacia el mundo físico al abortar. |
-| **7. AgentVM (Bytecode & Gas)** | Ejecución de Opcode | **19.4 ns/instrucción** (51.6M inst/s)| 141.5 ns/instrucción | Evaluación segura dentro del presupuesto de gas. |
-| **8. Agent-IPC (DIFC + Causal DAG)** | Latencia End-to-End | **0.9 µs/mensaje** (1,074,229 msgs/s) | 12.6 µs/mensaje | IFC y trazabilidad causal sin penalización. |
+| Subsistema Auditado | Métrica Principal | Mediana (p50) | p95 | $\sigma$ | Throughput Medido |
+|---|---|---|---|---|---|
+| **1. Merkle-DAG (FIPS 180-4 SHA-256)** | Hashing de bloques de 64 B | **539.1 ns/op** | 551.0 ns/op | 5.2 ns | **1,855,085 hashes/s** (113.23 MB/s) |
+| **2. Criptografía Poscuántica (WOTS)** | Firma WOTS ($w=16$) | **158.9 µs/firma** | 165.2 µs | — | **6,295 firmas/s** |
+| | Verificación WOTS ($w=16$) | **159.6 µs/verif** | 162.5 µs | — | **6,267 verif/s** |
+| **3. Motor de Capacidades (CSpace)** | Validación de slot + época | **1.9 ns/op** | 1.9 ns/op | 0.0 ns | **531,589,719 ops/s** |
+| **4. Planificador SchedCP** | Decisión multidimensional | **158.8 ns/decisión** | 172.3 ns | 6.4 ns | **6,298,022 decisiones/s** (JFI = **0.9996**) |
+| **5. Semantic-FS (Vectores & WAL)** | Similitud coseno 32-D | **36.4 ns/eval** | 37.3 ns | — | **27,448,548 evals/s** |
+| | WAL Commit Transaccional | **1.2 µs/tx** | 1.2 µs | — | **868,674 tx/s** |
+| **6. Multiverso & Escrow** | Staging en `EscrowManager` | **83.6 ns/acción** | 90.0 ns | — | **11,959,863 acciones/s** |
+| | Abort de 1,000 acciones | **128.8 µs/abort** | — | — | **Purga atómica (0 fugas)** |
+| **7. AgentVM (Bytecode & Gas)** | Ejecución de instrucción | **21.5 ns/inst** | 24.1 ns | 0.9 ns | **46,430,644 inst/s** |
+| **8. Agent-IPC (DIFC + Causal DAG)** | Enrutamiento DIFC + registro | **1.1 µs/msg** | 3.4 µs | 0.8 ns | **941,048 msgs/s** |
+
+### Salida Cruda de `cargo run --release -p xtask -- bench`
+
+```text
+================================================================================
+   AGENTOS EMPIRICAL BENCHMARK SUITE (N=10 STATISTICAL RUNS + WARMUP)
+================================================================================
+
+[1/8] Merkle-DAG Cryptographic Ledger (FIPS 180-4 SHA-256)
+  ├── Samples (N=10): 50,000 blocks (64B) per run
+  ├── Latency Median (p50): 539.1 ns/op | p95: 551.0 ns/op | σ: 5.2 ns
+  ├── Range: [min: 534.4 ns .. max: 551.0 ns]
+  └── Throughput: 1,855,085 hashes/sec (113.23 MB/s)
+
+[2/8] Post-Quantum Cryptography (WOTS Hash-Based Signatures)
+  ├── Samples (N=10): 500 signatures & verifications per run
+  ├── Sign   Median: 158.9 µs/sig   | p95: 165.2 µs | Throughput: 6,295 sig/sec
+  └── Verify Median: 159.6 µs/verif | p95: 162.5 µs | Throughput: 6,267 verif/sec
+
+[3/8] Capability Engine (CSpace Epoch Slot Verification)
+  ├── Samples (N=10): 1,000,000 capability checks per run
+  ├── Latency Median (p50): 1.9 ns/op | p95: 1.9 ns/op | σ: 0.0 ns
+  ├── Range: [min: 1.8 ns .. max: 1.9 ns]
+  └── Throughput: 531,589,719 ops/sec
+
+[4/8] SchedCP Intent-Aware Scheduler (Causal Priority Inheritance)
+  ├── Jain's Fairness Index (JFI): 0.9996 (1.0000 = Ideal Fairness)
+  ├── Latency Median (p50): 158.8 ns/decision | p95: 172.3 ns | σ: 6.4 ns
+  └── Throughput: 6,298,022 scheduling decisions/sec
+
+[5/8] Semantic-FS (32-D Vector Search & WAL Crash-Consistent Journaling)
+  ├── 32-D Cosine Search Median: 36.4 ns/eval | p95: 37.3 ns | Throughput: 27,448,548 evals/sec
+  └── WAL Commit Median:         1.2 µs/tx   | p95: 1.2 µs  | Throughput: 868,674 tx/sec
+
+[6/8] Multiverse Speculative Branching & Escrow Staging
+  ├── Escrow Staging Median: 83.6 ns/action | p95: 90.0 ns | Throughput: 11,959,863 ops/sec
+  └── Speculative Branch Abort (1,000 staged actions): 128800.0 ns/abort (Zero external leaks)
+
+[7/8] AgentVM Deterministic Bytecode & Gas Metering
+  ├── Samples (N=10): 60,000 instructions per run
+  ├── Latency Median (p50): 21.5 ns/instruction | p95: 24.1 ns | σ: 0.9 ns
+  └── Throughput: 46,430,644 instructions/sec
+
+[8/8] Agent-IPC DIFC Routing & Causal Taint Propagation
+  ├── Samples (N=10): 10,000 IPC messages per run
+  ├── Latency Median (p50): 1.1 µs/msg | p95: 3.4 µs | σ: 0.8 ns
+  └── Throughput: 941,048 msgs/sec
+```
 
 ---
 
-## 3. Inventario Completo de Pruebas Automatizadas del Workspace
+## 3. Inventario Completo de Pruebas Automatizadas (`cargo test --workspace`)
 
 ```text
 ========================================================================
-   AGENTOS TEST SUITE: 57 PASSED, 0 FAILED, 0 WARNINGS (100% PASS RATE)
+   GENOS TEST SUITE: 87 PASSED, 0 FAILED, 0 WARNINGS (100% PASS RATE)
 ========================================================================
 
 [Crate: causal-core] (18 tests)
@@ -101,7 +133,16 @@ Metodología: 1 pase de calentamiento descartado + $N=10$ ejecuciones estadísti
   - adversarial::test_attack_6_authorized_declassification .............. OK
   - adversarial::test_attack_7_cspace_resource_exhaustion_dos_blocked ... OK
 
-[Crate: agent-runtime] (8 tests: 4 integration + 4 transactional)
+[Crate: agent-runtime] (17 tests: 7 unit + 10 integration/transactional/MCP/Gmail)
+  - llm::tests::test_ollama_engine_payload_builder ..................... OK
+  - llm::tests::test_reasoning_loop_executes_actions_and_deducts_budget  OK
+  - llm::tests::test_reasoning_loop_halts_when_budget_exhausted ........ OK
+  - mcp::tests::test_mcp_mutating_tool_staged_in_escrow_if_tainted ..... OK
+  - mcp::tests::test_mcp_tool_discovery_and_capability_authorization ... OK
+  - net::tests::test_net_gateway_domain_filtering_and_get .............. OK
+  - net::tests::test_tainted_agent_post_held_in_escrow ................. OK
+  - gmail_security_scenario::test_gmail_indirect_prompt_injection_exfiltration_prevented OK
+  - mcp_integration::test_mcp_end_to_end_security_pipeline ............. OK
   - integration::test_scenario_1_safe_goal_execution_and_commit ........ OK
   - integration::test_scenario_2_indirect_prompt_injection_containment . OK
   - integration::test_scenario_3_multiverse_dreaming_and_commit ........ OK
@@ -119,11 +160,18 @@ Metodología: 1 pase de calentamiento descartado + $N=10$ ejecuciones estadísti
   - bench::test_deadline_awareness_in_sched_cp ......................... OK
   - bench::test_comparative_scheduling_fifo_vs_causal_inheritance ...... OK
 
-[Crate: agent-vm] (4 tests)
+[Crate: agent-vm] (11 tests: 8 unit + 3 WASM execution)
   - tests::test_vm_arithmetic_and_registers ............................ OK
   - tests::test_vm_capability_assertion ................................ OK
   - tests::test_vm_out_of_gas_containment .............................. OK
   - tests::test_vm_out_of_gas_purges_speculative_branch ................ OK
+  - wasm::tests::test_wasm_binary_header_validation .................... OK
+  - wasm::tests::test_wasm_execution_arithmetic_and_gas_metering ....... OK
+  - wasm::tests::test_wasm_host_call_cspace_capability_enforcement ..... OK
+  - wasm::tests::test_wasm_out_of_gas_trap ............................. OK
+  - wasm_execution::test_wasm_cspace_host_function_isolation ........... OK
+  - wasm_execution::test_wasm_memory_bounds_protection ................. OK
+  - wasm_execution::test_wasm_standard_software_runtime_lifecycle ...... OK
 
 [Crate: semantic-fs] (6 tests)
   - tests::test_cosine_similarity ...................................... OK
@@ -132,44 +180,45 @@ Metodología: 1 pase de calentamiento descartado + $N=10$ ejecuciones estadísti
   - tests::test_semantic_search_and_ifc_filtering ...................... OK
   - wal::tests::test_wal_serialization_roundtrip ....................... OK
   - wal::tests::test_wal_crash_recovery_preserves_committed_and_discards_uncommitted OK
+
+[Crate: genos-guard] (14 tests: 12 unit + 2 end-to-end stdio/HTTP integration)
+  - jsonrpc::tests::test_parse_and_extract_tools_call .................. OK
+  - jsonrpc::tests::test_build_error_response_format ................... OK
+  - policy::tests::test_parse_valid_policy_and_fail_closed_defaults .... OK
+  - policy::tests::test_invalid_policy_rejected ........................ OK
+  - session::tests::test_case_1_clean_session_non_mutating_allowed ..... OK
+  - session::tests::test_case_2_clean_session_mutating_allowed ......... OK
+  - session::tests::test_case_3_tainted_session_non_mutating_allowed ... OK
+  - session::tests::test_case_4_tainted_session_mutating_held_in_escrow  OK
+  - session::tests::test_case_5_unknown_tool_fails_closed .............. OK
+  - session::tests::test_case_6_explicit_session_reset_declassifies .... OK
+  - ledger::tests::test_ledger_chain_verification_and_why_tree ......... OK
+  - ledger::tests::test_ledger_tamper_detected_at_exact_line ........... OK
+  - integration::test_phase1_and_phase2_passthrough_and_taint_rejection  OK
+  - integration::test_phase3_escrow_approve_deny_and_auth .............. OK
 ```
 
 ---
 
-## 4. Fundamento Matemático de Seguridad y Criptografía Poscuántica
+## 4. Evidencia de Ejecución en Vivo de `genos-guard` (Contención de Indirect Prompt Injection)
 
-### Inmunidad al Algoritmo de Shor
-1. **Ruptura de Claves Asimétricas Clásicas:** El algoritmo de Shor (1994) factoriza enteros y resuelve logaritmos discretos en tiempo polinomial $\mathcal{O}((\log N)^3)$. Esto invalida por completo algoritmos basados en campos algebraicos como RSA, Diffie-Hellman, ECDSA y Ed25519 ante un computador cuántico con corrección de errores.
-2. **Resistencia de WOTS+ (Winternitz One-Time Signatures):** AgentOS implementa en `causal-core::pqc` un esquema basado en cadenas de hashes unidireccionales (WOTS+, $w=16$). Las funciones hash carecen de estructura de grupo algebraico abeliano, por lo que el algoritmo de Shor tiene **probabilidad de éxito nula**.
-3. **Cota de Grover:** El algoritmo de Grover provee únicamente una aceleración cuadrática $\mathcal{O}(2^{n/2})$ para búsqueda no estructurada. Con digest de SHA-256 ($n=256$), la seguridad cuántica resultante es de $\mathbf{2^{128}}$ operaciones elementales, superando cualquier límite termodinámico del universo observable.
+Salida real del flujo `write_file (CLEAN) -> fetch_url (TAINT:WEB_UNTRUSTED) -> write_file (HOLD)` y auditoría causal `genos-guard why 5` + `genos-guard verify`:
 
-### Pruebas de Inclusión de Conocimiento Cero (Zero-Knowledge Merkle Audit Proofs)
-- Cualquier agente externo o auditor formal puede verificar que un efecto causal $e_i$ está incorporado en la raíz de estado `state_root` sin aprender los identificadores, permisos ni contenidos de los registros hermanos del sistema.
-- La ruta de auditoría requiere únicamente $\mathcal{O}(\log N)$ hashes, validables en Ring 3 o en sistemas distribuidos.
+```text
+[genos-guard] ALLOW seq=#1 tool='write_file' (Tool 'write_file' is mutating (policy rule), allowed because session is CLEAN (integrity=100))
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"Wrote 10 bytes to ''","type":"text"}],"isError":false}}
+[genos-guard] ALLOW seq=#3 tool='fetch_url' (Tool 'fetch_url' is non-mutating)
+[genos-guard] TAINT seq=#4 tool='fetch_url' tainted session with TAINT:WEB_UNTRUSTED (integrity now 10)
+{"id":2,"jsonrpc":"2.0","result":{"content":[{"text":"# Issue #42: Crash when parsing empty config...","type":"text"}],"isError":false}}
+[genos-guard] HOLD  seq=#5 tool='write_file' taint=WEB_UNTRUSTED integrity=10 causes=[4] reason="Held by GenOS: session is tainted [WEB_UNTRUSTED] by [#4 fetch_url (WEB_UNTRUSTED)] (integrity=10); mutating tool 'write_file' requires human approval in Escrow"
+{"error":{"code":-32001,"message":"Held by GenOS Guard (seq #5, taint=WEB_UNTRUSTED, integrity=10): Held by GenOS: session is tainted [WEB_UNTRUSTED] by [#4 fetch_url (WEB_UNTRUSTED)] (integrity=10); mutating tool 'write_file' requires human approval in Escrow"},"id":3,"jsonrpc":"2.0"}
 
----
+[#5] call write_file (decision=HOLD, integrity=10, taint=WEB_UNTRUSTED)
+      payload_sha256=9ab4c5c5b0896cf1 preview="{\"content\":\"EXFILTRATED_API_KEY=sk-live-secret\",\"path\":\"\"}"
+  └── [#4] result fetch_url (decision=TAINT:WEB_UNTRUSTED, integrity=10, taint=WEB_UNTRUSTED)
+          payload_sha256=e8bd3670c740a262 preview="{\"id\":2,\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"# Issue #42: Crash when parsing empty config\\n\\nSteps to reproduce:\\n1. Start the application with an empty config file.\\n2. Observe panic on star...[truncated]"
+      └── [#3] call fetch_url (decision=ALLOW, integrity=100, taint=CLEAN)
+              payload_sha256=1701d259ab9d01ac preview="{\"url\":\"file://examples/prompt-injection-demo/payload/issue.md\"}"
 
-## 5. Instrucciones de Verificación Rápida para el Usuario
-
-El proyecto no requiere dependencias externas complejas ni modificaciones de sistema en la PC del usuario:
-
-1. **Diagnóstico del Entorno:**
-   ```powershell
-   cargo xtask doctor
-   ```
-2. **Ejecución de Pruebas Unitarias y Adversariales:**
-   ```powershell
-   cargo test --workspace
-   ```
-3. **Ejecución de Benchmarks Estadísticos en Modo Release:**
-   ```powershell
-   cargo run --release -p xtask -- bench
-   ```
-4. **Compilación del Microkernel y Ensamblaje UEFI ESP:**
-   ```powershell
-   cargo xtask build
-   ```
-5. **Arranque en QEMU (una vez instalado `Instalar_QEMU.exe`):**
-   ```powershell
-   cargo xtask run
-   ```
+VERIFIED OK: 5 causal entries in 'genos-ledger.jsonl' (head SHA-256: 72cb81b9264e59ef036808f980e8af093bd59743ad15b26a1be95f09f21a816f)
+```

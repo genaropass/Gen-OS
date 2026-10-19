@@ -53,6 +53,14 @@ name = "causal-core"
 version = "0.1.0"
 
 [[package]]
+name = "genos-guard"
+version = "0.1.0"
+dependencies = [
+ "capability-engine",
+ "causal-core",
+]
+
+[[package]]
 name = "semantic-fs"
 version = "0.1.0"
 dependencies = [

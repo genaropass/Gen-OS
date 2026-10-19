@@ -72,11 +72,11 @@ Correspondence: \texttt{passerogenaro@gmail.com}
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Traditional operating system architectures, including Linux, Windows, and POSIX microkernels, were engineered under the foundational assumption that software processes execute deterministic, human-authored machine binaries within static protection boundaries. The emergence of autonomous artificial intelligence (AI) agents governed by large language models (LLMs) and neural inference engines fundamentally invalidates this paradigm. Autonomous agents execute probabilistic, open-ended reasoning loops, interpret untrusted, unstructured external text, synthesize dynamic code, and invoke external APIs, rendering conventional Discretionary and Mandatory Access Control (DAC/MAC) models utterly vulnerable to Indirect Prompt Injection (IPI), Confused Deputy attacks, and speculative side-effect leakage.
+Traditional operating system architectures, including Linux, Windows, and POSIX microkernels, were engineered under the foundational assumption that software processes execute deterministic, human-authored machine binaries within static protection boundaries. The emergence of autonomous artificial intelligence (AI) agents governed by large language models (LLMs) fundamentally invalidates this paradigm: \emph{tool calls are the system calls of AI agents}. Autonomous agents execute probabilistic reasoning loops, ingest untrusted external text, and invoke mutating tools via protocols such as the Model Context Protocol (MCP), rendering conventional Discretionary and Mandatory Access Control (DAC/MAC) models vulnerable to Indirect Prompt Injection (IPI), Confused Deputy attacks, and irreversible external side-effect leakage.
 
-In this paper, we introduce \textbf{GenOS}, a bare-metal, AI-native microkernel implemented in 100\% stable Rust (\texttt{\#![no\_std]}). GenOS establishes a hardware-enforced, zero-trust substrate for autonomous multi-agent workloads. The microkernel boots via a SHA-256 cryptographically verified UEFI Limine 8.7.0 protocol into 64-bit long mode, activating hardware CPU security registers (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP}, \texttt{CR4.SMAP}, and \texttt{CR4.UMIP}) to guarantee strict $W \oplus X$ memory semantics and prevent user-space escalation. Protection domains communicate via a constant-time $\mathcal{O}(1)$ Capability Engine employing generational epoch tokens ($\text{CapId} = \langle \text{slot}, \text{generation} \rangle$) to mathematically eliminate Use-After-Revocation vulnerabilities. To neutralize Indirect Prompt Injections, GenOS integrates a Decentralized Information Flow Control (DIFC) security lattice adhering to the non-interference theorems of Bell-LaPadula and Biba, enforcing automated taint tracking and explicit declassification barriers.
+In this paper, we introduce \textbf{GenOS}, a dual-plane AI-native security architecture implemented in 100\% stable Rust with zero external crate dependencies. GenOS shares a portable \texttt{\#![no\_std]} verification core (\texttt{causal-core} and \texttt{capability-engine}) across (1)~a bare-metal x86-64 microkernel (\texttt{kernel/}) that boots via a SHA-256 verified UEFI Limine 8.7.0 protocol and enforces hardware CPU security registers (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP}, \texttt{CR4.SMAP}, and \texttt{CR4.UMIP}), and (2)~\textbf{\texttt{genos-guard}}, a drop-in user-space MCP security proxy for production agent hosts (Antigravity, Claude Desktop, Cursor). Protection domains are mediated by a constant-time $\mathcal{O}(1)$ Capability Engine employing generational epoch tokens ($\text{CapId} = \langle \text{slot}, \text{generation} \rangle$) to eliminate Use-After-Revocation vulnerabilities, paired with a Decentralized Information Flow Control (DIFC) security lattice adhering to the non-interference theorems of Bell-LaPadula and Biba.
 
-To safeguard external environments against hallucinated or malicious actions, GenOS introduces the \textbf{Multiverse Transactional Engine}, a 7-phase speculative execution pipeline with an external action \textbf{Escrow Buffer} ensuring instantaneous $\mathcal{O}(1)$ state rollback upon abort with zero physical leakage. Auditability is anchored in a post-quantum cryptographic ledger employing Winternitz One-Time Signatures (WOTS+, $w=16$), provably immune to Shor's polynomial-time period-finding algorithm, alongside Zero-Knowledge Causal Membership Proofs over a Merkle-DAG. Resource arbitration is governed by \textbf{SchedCP}, an intent-aware multidimensional scheduler integrating Earliest Deadline First (EDF) and Causal Priority Inheritance (CPI), achieving an empirical Jain's Fairness Index of $0.9996$. Rigorous statistical evaluation ($N=10$, 24-thread x86-64 host) demonstrates capability validation latencies of $1.9\text{ ns/op}$ ($519\text{M ops/s}$), IPC message transit latencies of $0.9\text{ }\mu\text{s}$, and a 100\% pass rate across 57 formal adversarial security and integration test suites.
+To safeguard external environments against compromised or hallucinated tool invocations, GenOS introduces a \textbf{Multiverse Transactional Engine} with an external action \textbf{Escrow Buffer} ensuring $\mathcal{O}(1)$ state rollback upon abort with zero external leakage. Auditability is anchored in a hash-chained causal ledger supporting post-quantum Winternitz One-Time Signatures (WOTS, $w=16$) immune to Shor's algorithm and cryptographic Merkle inclusion proofs (\texttt{CausalMembershipProof}). Resource arbitration is governed by \textbf{SchedCP}, an intent-aware multidimensional scheduler integrating Earliest Deadline First (EDF) and Causal Priority Inheritance (CPI), achieving an empirical Jain's Fairness Index of $0.9996$. User-space statistical evaluation ($N=10$ runs on an AMD Ryzen~9 3900X 12-Core / 24-Thread processor) demonstrates capability validation latencies of $1.9\text{ ns/op}$ ($531.6\text{M ops/s}$), Escrow staging latencies of $83.6\text{ ns/action}$ ($12.0\text{M ops/s}$), IPC DIFC routing in $1.1\text{ }\mu\text{s/msg}$, and a 100\% pass rate across 87 automated unit, end-to-end MCP proxy, and adversarial security tests.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -89,7 +89,7 @@ AI-Native Operating Systems, Microkernel Architecture, Capability-Based Security
 \IEEEpeerreviewmaketitle
 
 \begin{abstract}[Resumen en Espa\~nol]
-Los sistemas operativos convencionales (Linux, Windows, BSD) fueron dise\~nados bajo la premisa de procesos binarios est\'aticos y deterministas. La proliferaci\'on de agentes aut\'onomos impulsados por modelos de lenguaje (LLMs) expone brechas cr\'iticas: inyecci\'on indirecta de prompts (Indirect Prompt Injection), ataques de diputado confuso (Confused Deputy) y ejecuci\'on descontrolada de acciones irreversibles en APIs externas. En este trabajo presentamos \textbf{GenOS}, un sistema operativo microkernel bare-metal para arquitectura x86-64 implementado \'integramente en Rust estable (\texttt{\#![no\_std]}). GenOS proporciona aislamiento formal en Ring 3 con control de hardware (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP/SMAP/UMIP}), un motor de capacidades con \'epocas generacionales que elimina vulnerabilidades de reuso tras revocaci\'on, y un ret\'iculo de Control Descentralizado de Flujo de Informaci\'on (DIFC) basado en no-interferencia (Bell-LaPadula y Biba) con seguimiento estricto de taint. Asimismo, implementa un motor transaccional de Multiverso con retenci\'on en Escrow para efectos irreversibles (purga en $\mathcal{O}(1)$ ante abortos), firmas digitales poscu\'anticas WOTS+ inmunes al algoritmo de Shor, pruebas de membres\'ia de conocimiento cero sobre Merkle-DAG, y el planificador multidimensional SchedCP con herencia causal de prioridad ($JFI = 0.9996$). Las pruebas emp\'iricas demuestran validaci\'on de capacidades en $1.9\text{ ns}$, latencia de IPC en $0.9\text{ }\mu\text{s}$ y 100\% de aprobaci\'on en 57 pruebas de seguridad adversarial.
+Los sistemas operativos convencionales (Linux, Windows, BSD) fueron dise\~nados bajo la premisa de procesos binarios est\'aticos y deterministas. En la era de los agentes aut\'onomos de IA, \emph{las llamadas a herramientas (tool calls) son las llamadas al sistema (syscalls) de los agentes}, lo que expone brechas cr\'iticas ante la inyecci\'on indirecta de prompts (Indirect Prompt Injection), ataques de diputado confuso (Confused Deputy) y ejecuci\'on de efectos irreversibles. En este trabajo presentamos \textbf{GenOS}, una arquitectura de seguridad de doble plano implementada \'integramente en Rust estable (\texttt{rustc 1.99.0}) sin dependencias externas: un microkernel bare-metal x86-64 (\texttt{\#![no\_std]}) con aislamiento en Ring 3 (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP/SMAP/UMIP}) y \textbf{\texttt{genos-guard}}, un proxy de seguridad en espacio de usuario para el protocolo Model Context Protocol (MCP). GenOS integra un motor de capacidades con \'epocas generacionales, un ret\'iculo DIFC basado en Bell-LaPadula y Biba, un motor transaccional de Multiverso con retenci\'on en Escrow (purga en $\mathcal{O}(1)$ ante abortos), firmas poscu\'anticas WOTS ($w=16$) inmunes al algoritmo de Shor, pruebas criptogr\'aficas de inclusi\'on de Merkle sobre el grafo causal, y el planificador SchedCP con herencia causal de prioridad ($JFI = 0.9996$). La evaluaci\'on emp\'irica sobre un procesador AMD Ryzen~9 3900X (12 n\'ucleos / 24 hilos) demuestra validaci\'on de capacidades en $1.9\text{ ns}$, staging en Escrow en $83.6\text{ ns}$, latencia de IPC en $1.1\text{ }\mu\text{s}$ y 100\% de aprobaci\'on en las 87 pruebas automatizadas del workspace.
 \end{abstract}
 
 % =========================================================================
@@ -325,7 +325,7 @@ Table~\ref{tab:attacks} presents the seven canonical security attacks formally m
 3. \textbf{Privilege Escalation} & Child attempts \texttt{derive} with additional bits & Attenuation theorem verification ($P' \subseteq P$) & Blocked (\texttt{AttenuationViolation}) \\
 4. \textbf{Confidentiality Leak} & High-secret agent writes to public channel & Bell-LaPadula simple security check ($C_s \le C_{\text{chan}}$) & Blocked (\texttt{FlowPolicyViolation}) \\
 5. \textbf{Taint Injection} & Hostile prompt injected into strict channel & Biba integrity theorem ($I_{\text{sender}} \ge I_{\text{channel}}$) & Blocked (\texttt{TaintedSenderBlocked}) \\
-6. \textbf{Unauthorized Declass.} & Low-integrity agent asserts cleaned data & Explicit capability permission requirement & Blocked (\texttt{CapabilityDenied}) \\
+6. \textbf{Authorized Declassification} & Trusted sanitizer declassifies tainted data & Explicit \texttt{DECLASSIFY} capability verification & Allowed with authorized \texttt{DECLASSIFY} capability \\
 7. \textbf{CSpace DoS Bomb} & Malicious agent spams capability minting & Bounded CSpace table size with static bounds & Blocked (\texttt{CSpaceFull}) \\ \bottomrule
 \end{tabular}%
 }
@@ -350,7 +350,7 @@ Because autoregressive models are probabilistic, an agent executing an action pl
 ]
     \node[pbox] (p1) {1. \texttt{begin\_transaction()} $\rightarrow$ Fork Isolated Branch $\mathcal{B}_k$};
     \node[pbox, below=0.22cm of p1] (p2) {2--3. \texttt{BranchFS} Copy-on-Write + \texttt{execute\_tool()} Customs};
-    \node[pbox, fill=yellow!15, below=0.22cm of p2] (p3) {4. \texttt{EscrowBuffer}: Hold Irreversible Actions (91.8 ns/op)};
+    \node[pbox, fill=yellow!15, below=0.22cm of p2] (p3) {4. \texttt{EscrowBuffer}: Hold Irreversible Actions (83.6 ns/op)};
     \node[pbox, below=0.22cm of p3] (p4) {5. \texttt{verify\_invariants()} $\rightarrow$ Gas, Taint \& Policy Audit};
     \node[cbox, below left=0.35cm and -1.6cm of p4] (commit) {6. \texttt{commit()}: Flush CoW\\\& Dispatch Hardware I/O};
     \node[abox, below right=0.35cm and -1.6cm of p4] (abort) {7. \texttt{abort()}: $\mathcal{O}(1)$ Purge\\(Zero External Leakage)};
@@ -371,42 +371,32 @@ Execution within GenOS proceeds through an isolated multiversal pipeline:
     \item \textbf{Branch Fork (\texttt{begin\_transaction}):} The supervisor forks a speculative execution branch $\mathcal{B}_k$. The agent's current state and causality pointer are cloned in memory.
     \item \textbf{Isolated File Staging (\texttt{write\_file\_isolated}):} All filesystem modifications are written to \texttt{BranchFs}, a copy-on-write overlay filesystem. Baseline branch $\mathcal{B}_0$ remains completely unmodified.
     \item \textbf{Tool Execution Interception (\texttt{execute\_tool}):} When the agent invokes an external tool or MCP service, the call is intercepted by the GenOS Security Customs.
-    \item \textbf{External Action Escrow Staging (\texttt{escrow\_stage}):} If the tool produces external, irreversible side-effects (e.g., transmitting network packets, controlling physical hardware, executing cloud transactions), the payload is \textbf{not} delivered to the hardware. Instead, it is serialized and appended to the branch's private \texttt{EscrowBuffer}. The agent is issued a tentative \texttt{EffectId}, allowing its reasoning loop to proceed as if the action had succeeded.
-    \item \textbf{Invariant and Policy Validation (\texttt{verify\_invariants}):} Upon plan completion, the supervisor verifies all system invariants (resource gas budgets, taint leakage, formal security policies).
-    \item \textbf{Atomic Commit (\texttt{commit}):} If all invariants hold, \texttt{BranchFs} overlays are merged atomically into the root filesystem, and the \texttt{EscrowBuffer} is drained in topological order, dispatching physical packets to hardware drivers.
-    \item \textbf{Instantaneous Rollback (\texttt{abort}):} If an invariant is violated, gas is exhausted, or the agent detects an internal hallucination, \texttt{abort} is triggered. The \texttt{BranchFs} overlay and the \texttt{EscrowBuffer} are purged in $\mathcal{O}(1)$ time. 
+    \item \textbf{External Action Escrow Staging (\texttt{escrow\_stage}):} If the tool produces external, irreversible side-effects (e.g., transmitting network packets, writing files from a tainted session, or executing cloud transactions), the payload is \textbf{not} delivered immediately. Instead, it is serialized and appended to the branch's private \texttt{EscrowBuffer}.
+    \item \textbf{Invariant and Policy Validation (\texttt{verify\_invariants}):} Upon plan completion or human operator inspection, the supervisor verifies all system invariants (resource gas budgets, taint provenance, and formal security policies).
+    \item \textbf{Atomic Commit (\texttt{commit}):} If all invariants hold (or the human operator approves the held action), \texttt{BranchFs} overlays are merged atomically into the root filesystem, and the \texttt{EscrowBuffer} is drained in topological order.
+    \item \textbf{Instantaneous Rollback (\texttt{abort}):} If an invariant is violated, gas is exhausted, or the operator denies the held action, \texttt{abort} is triggered. The \texttt{BranchFs} overlay and the \texttt{EscrowBuffer} are purged in $\mathcal{O}(1)$ time.
 \end{enumerate}
 
 \begin{theorem}[\textbf{Zero External Leakage Invariant}]
-Let $\mathcal{A}_{\text{ext}}$ be the set of external physical network transmissions emitted by the operating system. If a speculative branch $\mathcal{B}_k$ aborts at time $t_{\text{abort}}$, the set of side-effects delivered to physical devices is strictly empty:
+Let $\mathcal{A}_{\text{ext}}$ be the set of external physical network or MCP tool mutations emitted by the system. If a speculative branch $\mathcal{B}_k$ aborts at time $t_{\text{abort}}$, the set of side-effects delivered to external actuators is strictly empty:
 $$\mathcal{A}_{\text{ext}}(\mathcal{B}_k) = \emptyset$$
 \end{theorem}
 \begin{proof}
-By construction, all network and peripheral device drivers in GenOS require a confirmed physical transmission descriptor minted exclusively by the kernel \texttt{EscrowManager}. During speculative execution, tool payloads are appended exclusively to the RAM-allocated \texttt{EscrowBuffer} of branch $\mathcal{B}_k$. The \texttt{abort\_branch} syscall drops the \texttt{EscrowBuffer} allocation without invoking the device transmission registers. Hence, no physical packet ever reaches the VirtIO network ring.
+By construction, all external tool dispatchers in GenOS (both in the kernel runtime and in \texttt{genos-guard}) require a committed branch release from \texttt{EscrowManager}. During speculative or tainted execution, mutating tool payloads are appended exclusively to the RAM-allocated \texttt{EscrowBuffer} of branch $\mathcal{B}_k$. Calling \texttt{abort\_branch} drops the branch entry from \texttt{EscrowManager} without forwarding the payload to the underlying driver or child MCP server.
 \end{proof}
 
-\subsection{The Dreaming Engine: Verified Autonomous Self-Improvement}
-Traditional operating systems waste idle CPU cycles executing the \texttt{HLT} instruction in an infinite loop. GenOS introduces the \textbf{Dreaming Engine}. When system CPU and GPU utilization drops below 10\% for a sustained period ($> 60\text{ s}$), the kernel initiates speculative background optimization:
-\begin{enumerate}
-    \item \textbf{Snapshotting:} An ephemeral snapshot of the immutable causal ledger is loaded into an isolated Multiverse branch.
-    \item \textbf{Historical Replay:} The kernel replays real task execution traces recorded during production operations.
-    \item \textbf{Policy Mutation:} An optimization agent proposes mutated scheduling heuristics, cache retention weights, or tool dispatch orders.
-    \item \textbf{Formal Invariant Barrier:} The candidate policy must pass the 100\% test suite deterministically: zero regressions in execution accuracy, zero security label violations, and a measurable performance improvement ($\Delta \ge 5\%$).
-    \item \textbf{Verified Hot-Swap:} If and only if the barrier is satisfied, the new policy is atomically hot-swapped into the running kernel without rebooting.
-\end{enumerate}
-
 % =========================================================================
-% SECTION 5: POST-QUANTUM CRYPTOGRAPHY & ZK PROOFS
+% SECTION 5: POST-QUANTUM CRYPTOGRAPHY & MERKLE INCLUSION PROOFS
 % =========================================================================
-\section{Post-Quantum Cryptography and Zero-Knowledge Auditability}
+\section{Post-Quantum Cryptography and Cryptographic Auditability}
 \label{sec:pqc}
 
-Modern kernel audit trails (e.g., Linux Audit System) rely on SHA-256 or classical asymmetric signatures. As demonstrated by Shor~\cite{shor1994algorithms}, a scalable quantum computer solves the Discrete Logarithm and Integer Factorization problems in polynomial time $\mathcal{O}((\log N)^3)$, compromising RSA, DSA, ECDSA, and Ed25519. In an AI-native OS where autonomous agents contract financial, legal, and operational commitments, the audit trail must be post-quantum secure.
+Modern kernel audit trails (e.g., Linux Audit System) rely on SHA-256 or classical asymmetric signatures. As demonstrated by Shor~\cite{shor1994algorithms}, a scalable quantum computer solves the Discrete Logarithm and Integer Factorization problems in polynomial time $\mathcal{O}((\log N)^3)$, compromising RSA, DSA, ECDSA, and Ed25519. In an AI-native OS where autonomous agents contract operational commitments, the audit trail must resist quantum forgery.
 
-\subsection{Winternitz One-Time Signatures (WOTS+)}
-GenOS implements WOTS+ hash-based signatures within the core microkernel crate \texttt{causal-core::pqc}, parameterized with Winternitz parameter $w = 16$ (4 bits per digit).
+\subsection{Winternitz One-Time Signatures (WOTS)}
+GenOS implements Winternitz One-Time Signatures (WOTS, parameterized with $w = 16$, 4 bits per digit) within the core crate \texttt{causal-core::pqc}. Because each WOTS keypair is strictly one-time (signing two distinct digests with the same seed reduces security), each signed causal record binds its own ephemeral one-time public key root $PK_{\text{root}}$ inside the hash-chained ledger; extending this primitive into a stateful or stateless Merkle hypertree (XMSS~\cite{buchmann2011xmss} or SPHINCS+) is discussed in Section~\ref{sec:conclusion}.
 
-\begin{definition}[\textbf{WOTS+ Parameters and Chain Construction}]
+\begin{definition}[\textbf{WOTS Parameters and Chain Construction}]
 Let $m$ be a 256-bit message digest ($m = \text{SHA-256}(\text{payload})$). The digest is decomposed into $l_1 = 64$ 4-bit nibbles. To prevent forgery via value augmentation, a checksum $C$ is computed:
 $$C = \sum_{i=1}^{l_1} (w - 1 - m_i) = \sum_{i=1}^{64} (15 - m_i) \le 64 \times 15 = 960$$
 Since $960 < 16^3 = 4096$, $C$ is represented in $l_2 = 3$ base-16 nibbles. The total number of hash chains is:
@@ -418,8 +408,8 @@ $$x_{k+1} = f(x_k, i, k) = \text{SHA-256}(x_k \parallel i_{16} \parallel k_8 \pa
 The public key terminal hash $pk_i$ is defined as $pk_i = f^{15}(sk_i)$. The master public key is the 256-bit Merkle root of all 67 terminal hashes:
 $$PK_{\text{root}} = \text{MerkleRoot}(pk_0, pk_1, \dots, pk_{66})$$
 
-\begin{theorem}[\textbf{Quantum Immunity of WOTS+}]
-The WOTS+ digital signature scheme implemented in GenOS is immune to Shor's algorithm.
+\begin{theorem}[\textbf{Quantum Immunity of WOTS}]
+The WOTS digital signature scheme implemented in GenOS is immune to Shor's algorithm.
 \end{theorem}
 \begin{proof}
 Shor's algorithm relies fundamentally on the existence of a hidden subgroup within an abelian algebraic group structure to extract period information via the Quantum Fourier Transform (QFT). The cryptographic one-way function $f$ in GenOS is constructed from SHA-256, which maps $\{0,1\}^* \to \{0,1\}^{256}$ through non-linear bitwise operations, modular addition, and rotational shifts devoid of algebraic group homomorphisms. Consequently, the period-finding routine in Shor's algorithm cannot be formulated.
@@ -435,12 +425,12 @@ For digest length $n = 256$, the search complexity is $\mathcal{O}(2^{128})$. Ev
 \end{proof}
 
 \subsection{Quantum-Resistant Symmetric Stream Cipher}
-To protect agent state snapshots stored on disk, GenOS integrates the \texttt{QuantumResistantCipher}, operating as a Counter (CTR) mode stream cipher driven by 256-bit HMAC-SHA-256. For key $K \in \{0,1\}^{256}$, nonce $\nu \in \{0,1\}^{64}$, and block counter $j \in \{0,1\}^{32}$:
+To protect agent state snapshots stored on disk, GenOS integrates the \texttt{QuantumResistantCipher}, operating as a Counter (CTR) mode stream cipher driven by 256-bit SHA-256 keystream blocks. For key $K \in \{0,1\}^{256}$, nonce $\nu \in \{0,1\}^{64}$, and block counter $j \in \{0,1\}^{32}$:
 $$\text{Keystream}_j = \text{SHA-256}(K \parallel \nu \parallel j)$$
-This ensures 128-bit post-quantum security against quantum key recovery.
+This ensures 128-bit post-quantum security against Grover key search when each $(\nu, j)$ pair is unique.
 
-\subsection{Zero-Knowledge Causal Membership Proofs}
-Auditors and peer nodes can verify that an effect $e_k$ was executed without learning the contents or permissions of sibling tasks. Every system event is recorded in a Merkle-DAG causal ledger with root $\mathcal{R}$.
+\subsection{Cryptographic Merkle Inclusion Proofs (\texttt{CausalMembershipProof})}
+Auditors and peer nodes can verify that an effect $e_k$ is included in the ledger state root $\mathcal{R}$ without requiring the full payload contents of sibling records (only sibling SHA-256 hashes along the authentication path are revealed).
 A \texttt{CausalMembershipProof} consists of the target effect hash $H_k$, the root $\mathcal{R}$, and an audit path of $\lceil \log_2 N \rceil$ sibling digests:
 $$\pi = \left\{ (S_i, \text{is\_left}_i) \right\}_{i=0}^{\lceil \log_2 N \rceil - 1}$$
 Verification evaluates the path iteratively:
@@ -514,58 +504,38 @@ $$\mathbf{J_{\text{empirical}} = 0.9996}$$
 demonstrating that SchedCP provides near-ideal fairness while preserving real-time priority preemption.
 
 % =========================================================================
-% SECTION 7: INFERENCE GATEWAYS & CONNECTIVITY
+% SECTION 7: USER-SPACE MCP PROXY (GENOS-GUARD) & RUNTIME SANDBOXING
 % =========================================================================
-\section{Scientific Inference Gateway and Connectivity}
+\section{User-Space MCP Enforcement (\texttt{genos-guard}) and Runtime Sandboxing}
 \label{sec:connectors}
 
-GenOS bridges low-level microkernel primitives to high-level artificial intelligence workflows through a decoupled, protocol-driven architectural layer.
+To enable immediate adoption on commodity developer workstations without requiring a bare-metal reboot, GenOS exposes its \texttt{\#![no\_std]} security core (\texttt{causal-core} and \texttt{capability-engine}) as a production user-space proxy, \textbf{\texttt{genos-guard}} (\texttt{crates/\allowbreak genos-guard}), alongside an in-kernel/user-space bytecode and WebAssembly sandbox (\texttt{crates/\allowbreak agent-vm}).
 
-\subsection{Model Context Protocol (MCP) Customs Engine}
-GenOS adopts the Model Context Protocol (MCP, JSON-RPC 2.0) as its universal inter-agent and tool integration bus. Every MCP server attached to the system is encapsulated inside a dedicated user-space protection domain. Tools exported by MCP servers are registered as first-class objects within the agent's CSpace.
-Tool invocations follow a mandatory 3-stage validation pipeline:
+\subsection{Model Context Protocol (MCP) Customs Proxy (\texttt{genos-guard})}
+\texttt{genos-guard} interposes on the standard JSON-RPC~2.0 \texttt{stdin}/\texttt{stdout} stream between any MCP host (e.g., Antigravity, Claude Desktop, Cursor) and any MCP tool server. Configured via a strict, fail-closed TOML policy (\texttt{genos.toml}), every \texttt{tools/call} invocation traverses a 4-stage enforcement pipeline:
 \begin{enumerate}
-    \item \textbf{CSpace Capability Check:} The calling agent must present a valid, non-expired capability handle with \texttt{Permissions::READ} or \texttt{WRITE}.
-    \item \textbf{DIFC Taint Injection:} Outputs returned by the tool are automatically tagged with \texttt{TOOL\_OUTPUT} taint. If the content originated from an external network source, the agent's integrity rating is downgraded to \texttt{UNTRUSTED\_EXTERNAL}.
-    \item \textbf{Escrow Gatekeeper:} If the tool is flagged as \texttt{is\_mutating = true}, the call is diverted into the Multiverse Escrow Buffer until formal supervisor consensus is achieved.
+    \item \textbf{Fail-Closed Policy Lookup:} Tools not explicitly declared in \texttt{genos.toml} default to \texttt{mutating = true} and \texttt{taint = ["TOOL\_OUTPUT"]}.
+    \item \textbf{DIFC Taint Propagation:} When a tool configured with a non-empty taint mask (such as \texttt{fetch\_url} with \texttt{WEB\_UNTRUSTED}) returns its response, \texttt{genos-guard} combines the incoming label with the active session label ($L_{\text{session}}' = L_{\text{session}} \sqcup L_{\text{tool}}$), downgrading session integrity and recording the causal sequence number.
+    \item \textbf{Non-Blocking Transactional Escrow Hold:} If a tainted session invokes a tool marked \texttt{mutating = true} (such as \texttt{write\_file}), \texttt{genos-guard} intercepts the call before it reaches the child MCP server, stages the raw JSON-RPC payload in \texttt{EscrowManager}, and awaits human operator approval via a token-authenticated \texttt{127.0.0.1} HTTP console or CLI (\texttt{genos-guard approve}/\texttt{deny}) while allowing concurrent non-mutating requests to proceed.
+    \item \textbf{Hash-Chained Causal Ledger (\texttt{why} \& \texttt{verify}):} Every call, response taint, approval, denial, and capability-authorized session \texttt{reset} (\texttt{Permissions::\allowbreak DECLASSIFY}) is appended to a persistent JSONL ledger (\texttt{genos-ledger.jsonl}) chained via $\text{hash}_n = \text{SHA-256}(\text{prev\_hash} \parallel \texttt{"|"} \parallel \text{canonical\_json}_n)$, auditable offline via \texttt{genos-guard why <seq>} and \texttt{genos-guard verify}.
 \end{enumerate}
 
-\subsection{Decoupled LLM Engine Gateways}
-Agent reasoning is decoupled from proprietary neural weights via the \texttt{LlmEngine} trait:
+\subsection{Deterministic LLM Reasoning Harness}
+Within \texttt{crates/\allowbreak agent-runtime}, agent reasoning loops are modeled through the \texttt{LlmEngine} trait:
 \begin{lstlisting}[language=Rust]
 pub trait LlmEngine: Send + Sync {
     fn chat(&self, messages: &[ChatMessage]) -> Result<ChatResponse, LlmError>;
     fn model_name(&self) -> &str;
 }
 \end{lstlisting}
-GenOS provides native connectors for:
-\begin{itemize}
-    \item \textbf{Local Edge Inference:} \texttt{OllamaEngine} interfacing with local quantized models (e.g., Llama-3-8B, Mistral-7B) over local loopback sockets without internet egress.
-    \item \textbf{Frontier Cloud Gateways:} HTTPS connectors for Anthropic Claude (Claude 3.5 Sonnet), Google Gemini (Gemini 1.5 Pro), and OpenAI (GPT-4o).
-\end{itemize}
+To guarantee 100\% deterministic, offline-reproducible security testing across CI environments, \texttt{agent-runtime} provides protocol-accurate request/response builders (\texttt{OllamaEngine} and \texttt{CloudLlmEngine}) and an offline reasoning harness that exercises indirect prompt injection, budget exhaustion, and Escrow containment without requiring live external API keys.
 
-\subsection{Biomedical and Scientific Edge Inference (HIPAA/GDPR Compliance)}
-GenOS provides specialized, hardware-accelerated gateways for scientific and biomedical edge inference, specifically supporting:
+\subsection{Deterministic Bytecode and WebAssembly Sandbox (\texttt{agent-vm})}
+To execute untrusted computational kernels safely, GenOS incorporates a deterministic register VM and a custom WebAssembly binary interpreter (\texttt{crates/\allowbreak agent-vm/\allowbreak src/\allowbreak wasm.rs}):
 \begin{itemize}
-    \item \textbf{Cellpose:} Deep neural network models for precise cellular and nuclear morphological segmentation.
-    \item \textbf{YOLO (You Only Look Once):} Real-time spatial tracking and laboratory object detection.
-    \item \textbf{ResNet:} Deep residual networks for high-dimensional biomedical feature extraction and diagnostic classification.
-\end{itemize}
-
-To guarantee strict compliance with healthcare regulatory frameworks (Health Insurance Portability and Accountability Act, HIPAA, and General Data Protection Regulation, GDPR), GenOS enforces architectural de-identification:
-\begin{enumerate}
-    \item \textbf{Protected Health Information (PHI) Isolation:} Biomedical datasets ingested into GenOS are tagged with maximal confidentiality ($C = 95$) and bounded within isolated \texttt{AddressSpace} domains.
-    \item \textbf{Zero-Egress Sandboxing:} The network socket driver blocks any egress IPC transmission containing PHI-tainted memory pages unless a formal de-identification transformation is verified and signed by an authorized \texttt{DECLASSIFY} capability token.
-    \item \textbf{Local Cryptographic Escrow:} All intermediate diagnostic feature maps are encrypted under \texttt{QuantumResistantCipher} using ephemeral, per-session keys discarded upon agent destruction.
-\end{enumerate}
-
-\subsection{Ring 3 WebAssembly (WASM) Sandbox Runtime}
-To execute user-authored scripts and legacy application logic safely within Ring~3, GenOS incorporates an in-kernel WebAssembly runtime (\texttt{crates/\allowbreak agent-vm/\allowbreak src/\allowbreak wasm.rs}):
-\begin{itemize}
-    \item \textbf{Standard Conformance:} Enforces binary validation of standard WebAssembly binaries matching magic bytes \texttt{\textbackslash 0asm} and version 1.
-    \item \textbf{Deterministic Gas Metering:} Every WebAssembly opcode consumes deterministic gas. If an execution loop exceeds its gas allocation, the runtime halts with \texttt{WasmError::\allowbreak OutOfGas}, instantly purging the speculative Multiverse branch and neutralizing denial-of-service attempts.
-    \item \textbf{Linear Memory Sandboxing:} Linear memory is partitioned into 64~KiB pages (\texttt{WASM\_PAGE\_SIZE}), strictly bounded by a configurable ceiling (\texttt{max\_pages}). Any out-of-bounds pointer calculation triggers an immediate memory trap (\texttt{MemoryOutOfBounds}).
-    \item \textbf{Multi-Language Runtime Support:} Enables execution of MicroPython (Python 3 interpreter), QuickJS (ECMAScript engine), and SQLite embedded inside user-space agent environments.
+    \item \textbf{Header and Section Validation:} Validates standard WebAssembly binary magic bytes (\texttt{\textbackslash 0asm}, version 1) and decodes code and linear memory sections.
+    \item \textbf{Deterministic Gas Metering:} Every executed instruction deducts deterministic gas; exceeding the gas budget halts execution with \texttt{WasmError::\allowbreak OutOfGas} and triggers an $\mathcal{O}(1)$ speculative branch abort.
+    \item \textbf{Linear Memory Bounds \& CSpace Host Calls:} Linear memory is bounded in 64~KiB pages (\texttt{WASM\_PAGE\_SIZE}) with immediate traps (\texttt{MemoryOutOfBounds}) on out-of-range accesses, and host function invocations require valid \texttt{CSpace} capabilities.
 \end{itemize}
 
 % =========================================================================
@@ -574,16 +544,15 @@ To execute user-authored scripts and legacy application logic safely within Ring
 \section{Empirical Evaluation and Benchmarks}
 \label{sec:eval}
 
-We conduct rigorous empirical benchmarking to quantify the operational overhead, throughput, and scalability of GenOS's architectural primitives.
+We conduct rigorous empirical benchmarking to quantify the operational overhead, throughput, and scalability of GenOS's core architectural primitives.
 
 \subsection{Experimental Methodology}
-All benchmark measurements were conducted under the following standardized experimental setup:
+All microbenchmark measurements were executed in user-space (\texttt{cargo run --release -p xtask -- bench}, using \texttt{std::time::Instant}) on the host CPU under the following standardized setup:
 \begin{itemize}
-    \item \textbf{Host Architecture:} x86-64 CPU equipped with 24 logical execution threads, 32~GiB RAM.
-    \item \textbf{Operating System Host:} Windows 11 x86-64, Rustc 1.99.0 Stable.
-    \item \textbf{Target Compilation Profile:} Optimized release profile (\texttt{--release}) with aggressive Link-Time Optimization (\texttt{lto = "fat"}) and code generation units set to 1.
-    \item \textbf{Statistical Rigor:} To eliminate transient CPU frequency scaling artifacts, every benchmark executes 1 preliminary warm-up pass (discarded), followed by $N = 10$ independent statistical runs. Compiler optimization elisions are prevented via \texttt{std::hint::\allowbreak black\_box}.
-    \item \textbf{Reported Metrics:} Median latency (p50), 95th percentile (p95), standard deviation ($\sigma$), and throughput operations per second.
+    \item \textbf{Host Processor:} AMD Ryzen~9 3900X 12-Core Processor (12 physical cores, 24 logical threads), 32~GiB RAM (\texttt{31.91~GiB} usable).
+    \item \textbf{Operating System \& Toolchain:} Windows~11 x86-64 (\texttt{x86\_64-pc-windows-msvc}), \texttt{rustc 1.99.0} Stable.
+    \item \textbf{Compilation Profile:} Optimized release profile (\texttt{--release}) with Link-Time Optimization (\texttt{lto = true}) and zero external crate dependencies.
+    \item \textbf{Statistical Protocol:} Every benchmark executes 1 warm-up pass (discarded) followed by $N = 10$ independent statistical runs using \texttt{core::hint::\allowbreak black\_box} to prevent dead-code elision.
 \end{itemize}
 
 \subsection{Benchmark Results}
@@ -591,32 +560,32 @@ The measured performance across all eight core subsystems of GenOS is summarized
 
 \begin{table*}[t]
 \centering
-\caption{Empirical Benchmark Results of GenOS Subsystems ($N=10$ Independent Statistical Runs, Release Profile)}
+\caption{Empirical User-Space Benchmark Results of GenOS Subsystems ($N=10$ Runs, AMD Ryzen 9 3900X, Release Profile)}
 \label{tab:benchmarks}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
 \textbf{Subsystem Benchmark} & \textbf{Median (p50)} & \textbf{95th Perc. (p95)} & \textbf{Std. Dev. ($\sigma$)} & \textbf{Throughput} & \textbf{Security Invariant Verified} \\ \midrule
-1. \textbf{CSpace Capability Verification} & \textbf{1.9 ns} & 2.1 ns & 0.08 ns & \textbf{519,035,632 ops/s} & $\mathcal{O}(1)$ Constant-time epoch check \\
-2. \textbf{Semantic Vector Cosine Search (32-D)} & \textbf{38.0 ns} & 41.2 ns & 1.45 ns & \textbf{26,315,789 evals/s} & High-density vector filtering in Ring 0 \\
-3. \textbf{Multiverse Escrow Action Staging} & \textbf{91.8 ns} & 98.4 ns & 2.10 ns & \textbf{10,893,246 actions/s} & Speculative side-effect isolation \\
-4. \textbf{SchedCP Scheduling Decision} & \textbf{158.4 ns} & 172.0 ns & 5.12 ns & \textbf{6,313,131 dec/s} & Multidimensional EDF + CPI preemption \\
-5. \textbf{SHA-256 Merkle Hashing (64B)} & \textbf{578.0 ns} & 582.4 ns & 2.80 ns & \textbf{1,729,987 hashes/s} & FIPS 180-4 / CAVP Causal integrity \\
-6. \textbf{Agent-IPC Transit (DIFC + DAG)} & \textbf{0.9 $\mu$s} & 1.1 $\mu$s & 0.05 $\mu$s & \textbf{1,074,229 msgs/s} & Full Bell-LaPadula taint tracking \\
-7. \textbf{WAL Transaction Commit (Disk)} & \textbf{1.2 $\mu$s} & 1.4 $\mu$s & 0.06 $\mu$s & \textbf{829,483 tx/s} & Crash-consistent atomic persistence \\
-8. \textbf{AgentVM Bytecode Execution} & \textbf{19.4 ns} & 21.0 ns & 0.62 ns & \textbf{51,546,391 inst/s} & Gas-metered deterministic sandbox \\
-9. \textbf{PQC WOTS+ Key Verification} & \textbf{145.2 $\mu$s} & 151.0 $\mu$s & 2.40 $\mu$s & \textbf{6,888 verif/s} & Shor-immune state verification \\
-10. \textbf{PQC WOTS+ Digital Signing} & \textbf{189.5 $\mu$s} & 198.2 $\mu$s & 3.10 $\mu$s & \textbf{5,278 signs/s} & 128-bit Grover-bounded post-quantum sig \\ \bottomrule
+1. \textbf{CSpace Capability Verification} & \textbf{1.9 ns} & 1.9 ns & 0.0 ns & \textbf{531,589,719 ops/s} & $\mathcal{O}(1)$ Constant-time epoch check \\
+2. \textbf{Semantic Vector Cosine Search (32-D)} & \textbf{36.4 ns} & 37.3 ns & --- & \textbf{27,448,548 evals/s} & High-density DIFC vector filtering \\
+3. \textbf{Multiverse Escrow Action Staging} & \textbf{83.6 ns} & 90.0 ns & --- & \textbf{11,959,863 actions/s} & Speculative side-effect isolation \\
+4. \textbf{SchedCP Scheduling Decision} & \textbf{158.8 ns} & 172.3 ns & 6.4 ns & \textbf{6,298,022 dec/s} & Multidimensional EDF + CPI preemption \\
+5. \textbf{SHA-256 Merkle Hashing (64B)} & \textbf{539.1 ns} & 551.0 ns & 5.2 ns & \textbf{1,855,085 hashes/s} & FIPS 180-4 / CAVP Causal integrity \\
+6. \textbf{Agent-IPC Transit (DIFC + DAG)} & \textbf{1.1 $\mu$s} & 3.4 $\mu$s & 0.8 ns & \textbf{941,048 msgs/s} & Full Bell-LaPadula \& Biba taint tracking \\
+7. \textbf{WAL Transaction Commit} & \textbf{1.2 $\mu$s} & 1.2 $\mu$s & --- & \textbf{868,674 tx/s} & Crash-consistent atomic persistence \\
+8. \textbf{AgentVM Bytecode Execution} & \textbf{21.5 ns} & 24.1 ns & 0.9 ns & \textbf{46,430,644 inst/s} & Gas-metered deterministic sandbox \\
+9. \textbf{PQC WOTS Key Verification ($w=16$)} & \textbf{159.6 $\mu$s} & 162.5 $\mu$s & --- & \textbf{6,267 verif/s} & Shor-immune state verification \\
+10. \textbf{PQC WOTS Digital Signing ($w=16$)} & \textbf{158.9 $\mu$s} & 165.2 $\mu$s & --- & \textbf{6,295 signs/s} & 128-bit Grover-bounded post-quantum sig \\ \bottomrule
 \end{tabular}%
 }
 \end{table*}
 
 \subsection{Discussion and Analysis}
 \begin{itemize}
-    \item \textbf{CSpace Capability Verification (1.9 ns):} The capability engine validates tokens at over 519 million checks per second. This sub-2 nanosecond latency confirms that GenOS introduces zero measurable overhead compared to raw pointer dereferencing, enabling fine-grained capability checks on every instruction or memory page access.
-    \item \textbf{Information Flow IPC (0.9 $\mu$s):} An end-to-end IPC transmission—including sender verification, Bell-LaPadula confidentiality checks, Biba integrity downgrades, payload serialization, and Merkle-DAG causality recording—completes in 900 nanoseconds, exceeding 1.07 million secure messages per second.
-    \item \textbf{Post-Quantum Overhead (189.5 $\mu$s):} WOTS+ signing evaluates 67 SHA-256 hash chains across 15 iterations. Completing in under 190 microseconds, this enables real-time signing of high-stakes transactional commits and external escrow releases without degrading interactive agent response times.
-    \item \textbf{Comprehensive Test Suite (57/57 Passed):} Across all seven kernel and runtime crates (\texttt{causal-core}, \texttt{capability-engine}, \texttt{agent-ipc}, \texttt{agent-runtime}, \texttt{agent-scheduler}, \texttt{agent-vm}, \texttt{semantic-fs}), all 57 automated unit, integration, transactional, and adversarial security tests pass with a 100\% success rate and zero compiler warnings.
+    \item \textbf{CSpace Capability Verification (1.9 ns):} The capability engine validates tokens at over 531.5 million checks per second ($\sigma = 0.0\text{ ns}$). This sub-2 nanosecond latency confirms that capability epoch validation introduces negligible overhead on every tool call or IPC operation.
+    \item \textbf{Information Flow IPC (1.1 $\mu$s) \& Escrow Staging (83.6 ns):} An end-to-end IPC transmission—including sender capability verification, Bell-LaPadula confidentiality checks, Biba integrity downgrades, and Merkle-DAG causality recording—completes in $1.1\text{ }\mu\text{s}$ ($941,048\text{ msgs/s}$), while staging an irreversible external action into \texttt{EscrowManager} takes $83.6\text{ ns}$ ($12.0\text{M actions/s}$) and aborting a 1,000-action speculative branch completes in $128.8\text{ }\mu\text{s}$ with zero external leakage.
+    \item \textbf{Post-Quantum Overhead (158.9 $\mu$s sign / 159.6 $\mu$s verify):} WOTS signing and verification evaluate 67 SHA-256 hash chains across 15 iterations in under 160 microseconds ($\sim 6,295\text{ sig/s}$), enabling real-time post-quantum signing of high-stakes transactional commits and external escrow releases.
+    \item \textbf{Comprehensive Test Suite (87/87 Passed):} Across all eight user-space crates (\texttt{causal-core}, \texttt{capability-engine}, \texttt{agent-ipc}, \texttt{agent-runtime}, \texttt{agent-scheduler}, \texttt{agent-vm}, \texttt{semantic-fs}, and \texttt{genos-guard}), all 87 automated unit, integration, end-to-end MCP stdio/HTTP proxy, transactional, and adversarial security tests pass with a 100\% success rate and zero compiler warnings.
 \end{itemize}
 
 % =========================================================================
@@ -634,13 +603,13 @@ The measured performance across all eight core subsystems of GenOS is summarized
 \toprule
 \textbf{Architectural Dimension} & \textbf{seL4}~\cite{klein2009sel4} & \textbf{HiStar}~\cite{zeldovich2006making} & \textbf{Firecracker}~\cite{agache2020firecracker} & \textbf{AIOS (Rutgers)}~\cite{mei2024aios} & \textbf{GenOS (This Work)} \\ \midrule
 Primary Implementation Language & C / Isabelle/HOL & C++ & Rust & Python & \textbf{100\% Stable Rust} \\
-Execution Privilege Level & Bare-Metal Ring 0 & Bare-Metal Ring 0 & User-space KVM & User-space Daemon & \textbf{Bare-Metal Ring 0 \& 3} \\
+Execution Privilege Level & Bare-Metal Ring 0 & Bare-Metal Ring 0 & User-space KVM & User-space Daemon & \textbf{Bare-Metal Ring 0/3 + MCP Proxy} \\
 Capability Engine Mechanics & Typed CNode tree & Object Capabilities & None (Linux cgroups) & None & \textbf{Generational Epoch ($G$)} \\
 Information Flow Control (DIFC) & Static partition & Asbestos/HiStar Tags & None & None & \textbf{Bell-LaPadula + Biba Lattice} \\
 Speculative Reversibility & None & None & Snapshot resume & None & \textbf{Multiverse 7-Phase + Escrow} \\
-Post-Quantum Signatures & None & None & None & None & \textbf{WOTS+ ($w=16$, Shor-immune)} \\
+Post-Quantum Signatures & None & None & None & None & \textbf{WOTS ($w=16$, Shor-immune)} \\
 Scheduling Architecture & Strict Priority / MCS & Round-Robin & Linux CFS & LLM-FCFS / Round-Robin & \textbf{SchedCP (EDF + CPI, JFI=0.9996)} \\
-Formal Adversarial Testing & Microkernel proofs & Information flow & Container isolation & Empirical prompts & \textbf{57/57 Tests (7 Attacks Formalized)} \\ \bottomrule
+Formal Adversarial Testing & Microkernel proofs & Information flow & Container isolation & Empirical prompts & \textbf{87/87 Tests (7 Attacks + MCP Proxy)} \\ \bottomrule
 \end{tabular}%
 }
 \end{table*}
@@ -649,9 +618,9 @@ Table~\ref{tab:comparison} provides an objective, multidimensional comparison be
 \begin{itemize}
     \item \textbf{seL4 Microkernel:} seL4~\cite{klein2009sel4} provides mathematical proofs of functional correctness and isolation. However, seL4 lacks native information flow control (DIFC), possesses no abstractions for speculative action rollback or external escrow, and requires complex formal C toolchains. GenOS provides capability security with generational epochs and native DIFC in memory-safe Rust.
     \item \textbf{HiStar and Asbestos:} HiStar~\cite{zeldovich2006making} pioneered DIFC in operating systems by minimizing the trusted computing base. However, HiStar was designed for static Unix processes, lacked post-quantum auditability, and provided no mechanisms to handle non-deterministic LLM agents or external tool side-effects.
-    \item \textbf{Firecracker MicroVMs:} Firecracker~\cite{agache2020firecracker} provides lightweight virtualization via KVM for multi-tenant serverless workloads. While it isolates memory via hardware virtualization, it runs standard Linux kernels inside the guest, remaining completely vulnerable to Indirect Prompt Injections, confused deputy tool abuse, and lack of fine-grained transactional reversibility.
-    \item \textbf{AIOS (Rutgers University):} AIOS~\cite{mei2024aios} proposed an LLM agent operating system structuring scheduling and context management. However, AIOS is implemented as a high-level user-space Python daemon running atop standard host operating systems. It does not provide bare-metal isolation, lacks CPU Ring~0/Ring~3 protection, provides no capability-based memory model, and leaves the underlying host vulnerable to kernel exploits.
-    \item \textbf{WebAssembly System Interface (WASI):} WASI provides sandboxed capability-based execution for portable WebAssembly modules. While powerful, WASI operates as an application-level runtime without bare-metal control register enforcement (\texttt{SMEP}, \texttt{SMAP}, \texttt{UMIP}) and lacks native post-quantum cryptographic ledgers.
+    \item \textbf{Firecracker MicroVMs:} Firecracker~\cite{agache2020firecracker} provides lightweight virtualization via KVM for multi-tenant serverless workloads. While it isolates memory via hardware virtualization, it runs standard Linux kernels inside the guest, remaining vulnerable to Indirect Prompt Injections, confused deputy tool abuse, and lack of fine-grained transactional reversibility.
+    \item \textbf{AIOS (Rutgers University):} AIOS~\cite{mei2024aios} proposed an LLM agent operating system structuring scheduling and context management. However, AIOS is implemented as a high-level user-space Python daemon running atop standard host operating systems without capability tokens, DIFC taint tracking, or cryptographic causal ledgers.
+    \item \textbf{WebAssembly System Interface (WASI):} WASI provides sandboxed capability-based execution for portable WebAssembly modules, which GenOS complements with DIFC taint propagation, transactional Escrow holding, and hash-chained causal auditability.
 \end{itemize}
 
 % =========================================================================
@@ -660,18 +629,25 @@ Table~\ref{tab:comparison} provides an objective, multidimensional comparison be
 \section{Conclusion and Future Work}
 \label{sec:conclusion}
 
-In this paper, we introduced \textbf{GenOS}, the first bare-metal, AI-native microkernel architecture specifically designed to secure, isolate, and arbitrate autonomous multi-agent systems. By synthesizing hardware CPU controls (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP/SMAP/UMIP}), generational capability epochs, and a Decentralized Information Flow Control lattice based on the non-interference theorems of Bell-LaPadula and Biba, GenOS mathematically neutralizes Indirect Prompt Injection and Confused Deputy attacks. The Multiverse Transactional Engine and Escrow Buffer guarantee that hallucinated or malicious agent actions can be rolled back in $\mathcal{O}(1)$ time with zero external side-effect leakage. Furthermore, Winternitz One-Time Signatures (WOTS+) and Zero-Knowledge Causal Membership Proofs establish an audit trail provably immune to quantum algorithms.
+In this paper, we introduced \textbf{GenOS}, a dual-plane AI-native security architecture combining a bare-metal x86-64 microkernel (\texttt{kernel/}) with a drop-in user-space Model Context Protocol security proxy (\textbf{\texttt{genos-guard}}). By synthesizing hardware CPU controls (\texttt{CR0.WP}, \texttt{EFER.NXE}, \texttt{CR4.SMEP/SMAP/UMIP}), generational capability epochs, and a Decentralized Information Flow Control lattice based on the non-interference theorems of Bell-LaPadula and Biba, GenOS contains Indirect Prompt Injection and Confused Deputy attacks. The Multiverse Transactional Engine and Escrow Buffer guarantee that compromised or hallucinated mutating tool calls are held before execution and can be rolled back in $\mathcal{O}(1)$ time with zero external side-effect leakage, while WOTS signatures and cryptographic Merkle inclusion proofs (\texttt{CausalMembershipProof}) establish a verifiable audit trail.
 
-Future work will expand GenOS along three principal axes: (1) Integrating hardware-based Physical Unclonable Functions (PUF) and TPM~2.0 silicon roots of trust directly into the WOTS+ master seed derivation pipeline; (2) Formalizing complete machine-checked proofs of the SchedCP scheduler and DIFC lattice in the Coq or Lean~4 proof assistants; and (3) Extending the Multiverse Escrow Engine across distributed, multi-node microkernel clusters via Byzantine fault-tolerant causal consensus.
+Future work will expand GenOS along five concrete engineering and research axes:
+\begin{enumerate}
+    \item \textbf{Many-Time Stateless and Stateful Post-Quantum Signatures:} Extending our one-time WOTS primitive into Merkle hypertree schemes (XMSS~\cite{buchmann2011xmss} and stateless SPHINCS+/SLH-DSA) backed by TPM~2.0 silicon roots of trust.
+    \item \textbf{Live Socket Connectors for Cloud LLMs and Biomedical Edge Pipelines:} Extending the deterministic \texttt{LlmEngine} harness with live TLS/TCP socket drivers for Ollama, Claude, Gemini, and OpenAI, as well as domain-specific HIPAA/GDPR biomedical inference pipelines (Cellpose, YOLO, ResNet).
+    \item \textbf{Full WASI Multi-Language Guest Runtimes:} Expanding the custom \texttt{agent-vm} WebAssembly interpreter to run full WASI-compiled MicroPython, QuickJS, and SQLite toolchains inside Ring~3.
+    \item \textbf{The Autonomous ``Dreaming Engine'':} Leveraging idle CPU cycles to replay historical causal traces inside isolated Multiverse branches to automatically synthesize and verify improved scheduling and caching policies.
+    \item \textbf{Machine-Checked Mechanized Proofs:} Formalizing machine-checked proofs of the SchedCP scheduler and DIFC lattice in Lean~4.
+\end{enumerate}
 
 % =========================================================================
 % SECTION 11: OPEN SOURCE & REPRODUCIBILITY
 % =========================================================================
 \section*{Open Source Availability and Reproducibility}
-GenOS is fully open-sourced under the MIT License. The complete microkernel source code, Limine UEFI bootloader configuration, capability engine, cryptographic modules, and the statistical benchmark suite are permanently archived for peer review and public reproducibility:
+GenOS is fully open-sourced under the MIT License. The complete microkernel source code, \texttt{genos-guard} MCP proxy, Limine UEFI bootloader configuration, capability engine, cryptographic modules, reproducible prompt-injection demo, and statistical benchmark suite are permanently archived for peer review and public reproducibility:
 \begin{itemize}
     \item \textbf{Zenodo Official Archive (DOI):} Archived under CERN / OpenAIRE Zenodo.
-    \item \textbf{Source Repository:} \url{https://github.com/GenaroPassero/AgentOS}
+    \item \textbf{Source Repository:} \url{https://github.com/genaropass/Gen-OS}
     \item \textbf{License:} MIT License (Open Source Initiative compliant).
 \end{itemize}
 

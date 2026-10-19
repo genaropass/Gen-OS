@@ -7,6 +7,7 @@ members = [
     "crates/agent-scheduler",
     "crates/agent-vm",
     "crates/agent-ipc",
+    "crates/genos-guard",
     "kernel",
     "xtask",
 ]
@@ -18,6 +19,7 @@ default-members = [
     "crates/agent-scheduler",
     "crates/agent-vm",
     "crates/agent-ipc",
+    "crates/genos-guard",
     "xtask",
 ]
 resolver = "2"
