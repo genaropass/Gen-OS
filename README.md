@@ -25,21 +25,22 @@ GenOS puts a capability, DIFC, and transactional Escrow kernel at the tool-call 
 
 ---
 
-## Two ways to run the same core
+## Three ways to run the same core
 
 ```text
-                 GenOS Core  (crates/)
-   capability-engine · causal-core (DIFC, Escrow, SHA-256, WOTS)
-                     │                              │
-          ┌──────────┴─────────┐          ┌─────────┴──────────┐
-          │  genos-guard       │          │  genos-kernel      │
-          │  user-space kernel │          │  bare-metal x86-64 │
-          │  MCP stdio proxy   │          │  microkernel       │
-          │  Win / macOS / Lin │          │  (research)        │
-          └────────────────────┘          └────────────────────┘
+                        GenOS Core  (crates/)
+       capability-engine · causal-core (DIFC, Escrow, SHA-256, WOTS)
+             │                        │                        │
+  ┌──────────┴─────────┐   ┌──────────┴─────────┐   ┌──────────┴─────────┐
+  │  genos-guard       │   │  genos-sentinel    │   │  genos-kernel      │
+  │  MCP stdio proxy   │   │  Zero-Trust Shield │   │  bare-metal x86-64 │
+  │  for AI agents     │   │  + Custody CoSign  │   │  microkernel       │
+  │  Win / macOS / Lin │   │  (Anti-Lazarus)    │   │  (research)        │
+  └────────────────────┘   └────────────────────┘   └────────────────────┘
 ```
 
 - **`genos-guard`** (`crates/genos-guard`): a production user-space MCP stdio proxy that sits between your agent client (Antigravity, Claude Desktop, Cursor) and any MCP server. Once the session has read untrusted content, any tool call marked `mutating = true` is intercepted and held in `EscrowManager` until you approve or deny it via the localhost web console (`127.0.0.1:7878`) or CLI.
+- **`genos-sentinel`** (`crates/genos-sentinel`): a dual-ring Zero-Trust Perimeter (**Ring 1: GenOS Shield** — IPv4/CIDR allowlisting, cryptographically signed binary manifests, WOTS-signed peer request envelopes with monotonic anti-replay nonces) and Mandatory Policy Co-Signer (**Ring 2: GenOS Sentinel** — independent transaction decoder catching EIP-7702 `0x04` SetCode delegations, Safe{Wallet} `DELEGATECALL` blind-signing spoofing, sliding-window velocity circuit breaker, and M-of-N cryptographic operator quorum with anti-self-approval).
 - **`genos-kernel`** (`kernel/`): a `#![no_std]` Rust microkernel that boots on x86-64 via UEFI (Limine 8.7.0), exploring the same capability, DIFC, and Escrow primitives with hardware Ring 0 / Ring 3 isolation.
 
 ### How `genos-guard` works
@@ -102,6 +103,9 @@ cargo run --quiet -p genos-guard --bin genos-guard -- why 5 --ledger genos-ledge
 
 # 4. Verify the SHA-256 hash chain of the ledger
 cargo run --quiet -p genos-guard --bin genos-guard -- verify --ledger genos-ledger.jsonl
+
+# 5. Run the GenOS Shield + Sentinel Red-Team Replay Suite (Binance Oct-2026 & Bybit Feb-2025 vectors)
+cargo run --quiet -p genos-sentinel -- redteam
 ```
 
 Output of `genos-guard why 5`:
@@ -121,6 +125,7 @@ Output of `genos-guard why 5`:
 | Component | Status |
 |---|---|
 | `genos-guard`: MCP JSON-RPC 2.0 stdio proxy, fail-closed TOML policy, DIFC session taint, `127.0.0.1` Escrow approval UI + CLI, SHA-256 JSONL ledger (`why`, `verify`) | ✅ Implemented and tested (14 unit & end-to-end tests) |
+| `genos-sentinel`: Ring 1 **GenOS Shield** (CIDR IP allowlist, signed binary manifests, signed peer envelopes + anti-replay nonces) + Ring 2 **GenOS Sentinel** (independent decoder for EIP-7702 `0x04` SetCode, Safe `DELEGATECALL`, BTC PSBT; velocity circuit breaker; M-of-N cryptographic quorum; signed audit ledger) | ✅ Implemented and tested (7 unit & red-team replay tests) |
 | `capability-engine`: generational capabilities (`CapId(slot, generation)`), attenuation, cascading revocation, bounded CSpace | ✅ Implemented and tested (4 tests) |
 | `causal-core`: security labels, taint masks, Merkle-DAG causal ledger, `why()`, Merkle inclusion proofs, `EscrowManager` | ✅ Implemented and tested (18 tests) |
 | `causal-core::hash`: FIPS 180-4 SHA-256 | ✅ Verified against NIST CAVP test vectors |
@@ -132,14 +137,15 @@ Output of `genos-guard why 5`:
 | `semantic-fs`: Copy-on-Write branches, 32-D cosine search, crash-consistent WAL | ✅ Implemented and tested (6 tests) |
 | `kernel/`: bare-metal x86-64 UEFI microkernel (Limine 8.7.0, PML4, Ring 3 `SYSCALL`/`SYSRET`, `SMEP`/`SMAP`/`UMIP`, VirtIO-Blk) | 🔬 Research prototype |
 
-All 87 automated tests and the $N=10$ release benchmark numbers (measured on an AMD Ryzen 9 3900X 12-Core / 24-Thread processor) are recorded with raw output in [`docs/EVIDENCIA.md`](docs/EVIDENCIA.md).
+All 94 automated tests and the $N=10$ release benchmark numbers (measured on an AMD Ryzen 9 3900X 12-Core / 24-Thread processor) are recorded with raw output in [`docs/EVIDENCIA.md`](docs/EVIDENCIA.md).
 
 ---
 
 ## Workspace Commands
 
 ```powershell
-cargo test --workspace                 # run all 87 unit, integration & adversarial tests
+cargo test --workspace                 # run all 94 unit, integration & adversarial tests
+cargo run -p genos-sentinel -- redteam # run Lazarus/Binance/Bybit red-team replay suite
 cargo run --release -p xtask -- bench  # run statistical N=10 microbenchmarks
 cargo xtask doctor                     # toolchain / Limine UEFI / QEMU diagnostic
 cargo xtask build                      # build bare-metal kernel + UEFI ESP

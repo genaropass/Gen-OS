@@ -1,0 +1,15 @@
+[package]
+name = "genos-sentinel"
+version = "0.1.0"
+edition = "2021"
+authors = ["Genaro Agustín Passero"]
+license = "MIT"
+description = "GenOS Shield & Sentinel: Zero-Trust OS Perimeter (Signed Binaries, IP/Peer Identity) and Mandatory Policy Co-Signer against Lazarus-class exploits."
+
+[[bin]]
+name = "genos-sentinel"
+path = "src/main.rs"
+
+[dependencies]
+causal-core = { path = "../causal-core" }
+capability-engine = { path = "../capability-engine" }

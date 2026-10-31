@@ -8,6 +8,7 @@ members = [
     "crates/agent-vm",
     "crates/agent-ipc",
     "crates/genos-guard",
+    "crates/genos-sentinel",
     "kernel",
     "xtask",
 ]
@@ -20,6 +21,7 @@ default-members = [
     "crates/agent-vm",
     "crates/agent-ipc",
     "crates/genos-guard",
+    "crates/genos-sentinel",
     "xtask",
 ]
 resolver = "2"

@@ -1,0 +1,29 @@
+name: GenOS CI & Adversarial Security Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test Suite & Red-Team Replays (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run full workspace unit, integration & adversarial tests
+        run: cargo test --workspace
+
+      - name: Run GenOS Shield + Sentinel Lazarus Red-Team Replay Suite
+        run: cargo run -p genos-sentinel -- redteam

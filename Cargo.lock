@@ -61,6 +61,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "genos-sentinel"
+version = "0.1.0"
+dependencies = [
+ "capability-engine",
+ "causal-core",
+]
+
+[[package]]
 name = "semantic-fs"
 version = "0.1.0"
 dependencies = [
