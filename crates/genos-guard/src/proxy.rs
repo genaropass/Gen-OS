@@ -17,7 +17,7 @@ use crate::jsonrpc::{
     build_error_response, inspect_rpc, parse_json, JsonValue, JSONRPC_ERR_HELD_BY_GENOS,
 };
 use crate::policy::{mask_to_names, Policy};
-use crate::session::{decide, Decision};
+use crate::session::{decide_with_args, Decision};
 
 /// Controls how `genos-guard` handles a `Decision::Hold` event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,7 +196,12 @@ fn handle_client_to_server_line(
         Err(_) => return None,
     };
 
-    let decision = decide(&guard.policy, &guard.session, &tc.tool_name);
+    let decision = decide_with_args(
+        &guard.policy,
+        &guard.session,
+        &tc.tool_name,
+        &tc.arguments_json,
+    );
     match decision {
         Decision::Allow { reason } => {
             let causes = guard.session.cause_seqs();

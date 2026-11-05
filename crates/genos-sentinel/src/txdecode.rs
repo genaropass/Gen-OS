@@ -118,6 +118,16 @@ pub fn decode_transaction(
 fn decode_evm_frame(raw: &[u8], raw_tx_sha256: [u8; 32]) -> Result<DecodedIntent, String> {
     let tx_type = raw[0];
 
+    // If raw[1..] is a valid Ethereum RLP list (starts with 0xc0..=0xff and decodes to >= 8 items),
+    // use the full Ethereum RLP parser for EIP-1559 (0x02) and EIP-7702 (0x04):
+    if raw.len() > 2 && raw[1] >= 0xc0 {
+        if let Ok((RlpItem::List(items), consumed)) = decode_rlp_item(&raw[1..]) {
+            if consumed == raw.len() - 1 && items.len() >= 8 {
+                return decode_evm_rlp_items(tx_type, &items, raw_tx_sha256);
+            }
+        }
+    }
+
     // Case 1: EIP-7702 SetCode Transaction (`0x04`) — Binance Oct-2026 attack vector
     if tx_type == 0x04 {
         if raw.len() < 1 + 8 + 20 + 16 + 20 {
@@ -377,6 +387,370 @@ pub mod builders {
         out.extend_from_slice(&fee_sats.to_be_bytes());
         out
     }
+
+    /// Builds a real RLP-encoded Ethereum EIP-7702 (`0x04`) transaction:
+    /// `0x04 || RLP([chain_id, nonce, max_priority_fee, max_fee, gas, to, value, data, access_list, [[auth_chain_id, delegate_addr, auth_nonce, y_parity, r, s]]])`
+    pub fn build_real_rlp_eip7702_tx(
+        tx_chain_id: u64,
+        to: [u8; 20],
+        value_wei: u128,
+        auth_chain_id: u64,
+        delegate_code_addr: [u8; 20],
+    ) -> Vec<u8> {
+        use super::{rlp_encode_bytes, rlp_encode_list, rlp_encode_u128};
+        let auth_tuple = rlp_encode_list(&[
+            rlp_encode_u128(auth_chain_id as u128),
+            rlp_encode_bytes(&delegate_code_addr),
+            rlp_encode_u128(0),
+            rlp_encode_u128(0),
+            rlp_encode_u128(1),
+            rlp_encode_u128(1),
+        ]);
+        let auth_list = rlp_encode_list(&[auth_tuple]);
+        let payload = rlp_encode_list(&[
+            rlp_encode_u128(tx_chain_id as u128),
+            rlp_encode_u128(1),
+            rlp_encode_u128(1_000_000_000),
+            rlp_encode_u128(20_000_000_000),
+            rlp_encode_u128(21_000),
+            rlp_encode_bytes(&to),
+            rlp_encode_u128(value_wei),
+            rlp_encode_bytes(&[]),
+            rlp_encode_list(&[]),
+            auth_list,
+        ]);
+        let mut out = Vec::with_capacity(1 + payload.len());
+        out.push(0x04);
+        out.extend_from_slice(&payload);
+        out
+    }
+}
+
+/// Zero-dependency Ethereum Recursive Length Prefix (RLP) AST node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RlpItem {
+    Bytes(Vec<u8>),
+    List(Vec<RlpItem>),
+}
+
+/// Decodes a single RLP item (bytes or nested list) from `input`, returning `(item, bytes_consumed)`.
+pub fn decode_rlp_item(input: &[u8]) -> Result<(RlpItem, usize), String> {
+    if input.is_empty() {
+        return Err("Unexpected EOF in RLP input".to_string());
+    }
+    let b0 = input[0];
+    if b0 <= 0x7f {
+        Ok((RlpItem::Bytes(vec![b0]), 1))
+    } else if b0 <= 0xb7 {
+        let len = (b0 - 0x80) as usize;
+        if input.len() < 1 + len {
+            return Err("Truncated RLP short byte string".to_string());
+        }
+        Ok((RlpItem::Bytes(input[1..1 + len].to_vec()), 1 + len))
+    } else if b0 <= 0xbf {
+        let len_of_len = (b0 - 0xb7) as usize;
+        if input.len() < 1 + len_of_len {
+            return Err("Truncated RLP long byte length".to_string());
+        }
+        let mut len = 0usize;
+        for &b in &input[1..1 + len_of_len] {
+            len = (len << 8) | (b as usize);
+        }
+        let start = 1 + len_of_len;
+        if input.len() < start + len {
+            return Err("Truncated RLP long byte string".to_string());
+        }
+        Ok((RlpItem::Bytes(input[start..start + len].to_vec()), start + len))
+    } else if b0 <= 0xf7 {
+        let list_len = (b0 - 0xc0) as usize;
+        if input.len() < 1 + list_len {
+            return Err("Truncated RLP short list".to_string());
+        }
+        let items = decode_rlp_sequence(&input[1..1 + list_len])?;
+        Ok((RlpItem::List(items), 1 + list_len))
+    } else {
+        let len_of_len = (b0 - 0xf7) as usize;
+        if input.len() < 1 + len_of_len {
+            return Err("Truncated RLP long list length".to_string());
+        }
+        let mut list_len = 0usize;
+        for &b in &input[1..1 + len_of_len] {
+            list_len = (list_len << 8) | (b as usize);
+        }
+        let start = 1 + len_of_len;
+        if input.len() < start + list_len {
+            return Err("Truncated RLP long list payload".to_string());
+        }
+        let items = decode_rlp_sequence(&input[start..start + list_len])?;
+        Ok((RlpItem::List(items), start + list_len))
+    }
+}
+
+fn decode_rlp_sequence(mut slice: &[u8]) -> Result<Vec<RlpItem>, String> {
+    let mut out = Vec::new();
+    while !slice.is_empty() {
+        let (item, used) = decode_rlp_item(slice)?;
+        out.push(item);
+        slice = &slice[used..];
+    }
+    Ok(out)
+}
+
+pub fn rlp_encode_bytes(bytes: &[u8]) -> Vec<u8> {
+    if bytes.len() == 1 && bytes[0] <= 0x7f {
+        return vec![bytes[0]];
+    }
+    let mut out = Vec::new();
+    if bytes.len() <= 55 {
+        out.push(0x80 + bytes.len() as u8);
+        out.extend_from_slice(bytes);
+    } else {
+        let len_bytes = to_minimal_be_bytes(bytes.len() as u128);
+        out.push(0xb7 + len_bytes.len() as u8);
+        out.extend_from_slice(&len_bytes);
+        out.extend_from_slice(bytes);
+    }
+    out
+}
+
+pub fn rlp_encode_u128(val: u128) -> Vec<u8> {
+    if val == 0 {
+        return vec![0x80];
+    }
+    rlp_encode_bytes(&to_minimal_be_bytes(val))
+}
+
+pub fn rlp_encode_list(encoded_items: &[Vec<u8>]) -> Vec<u8> {
+    let total_len: usize = encoded_items.iter().map(|v| v.len()).sum();
+    let mut out = Vec::new();
+    if total_len <= 55 {
+        out.push(0xc0 + total_len as u8);
+    } else {
+        let len_bytes = to_minimal_be_bytes(total_len as u128);
+        out.push(0xf7 + len_bytes.len() as u8);
+        out.extend_from_slice(&len_bytes);
+    }
+    for item in encoded_items {
+        out.extend_from_slice(item);
+    }
+    out
+}
+
+fn to_minimal_be_bytes(val: u128) -> Vec<u8> {
+    if val == 0 {
+        return Vec::new();
+    }
+    let be = val.to_be_bytes();
+    let first_nonzero = be.iter().position(|&b| b != 0).unwrap_or(15);
+    be[first_nonzero..].to_vec()
+}
+
+fn rlp_bytes_to_u128(b: &[u8]) -> Result<u128, String> {
+    if b.len() > 16 {
+        return Err("RLP integer exceeds u128".to_string());
+    }
+    let mut acc = 0u128;
+    for &byte in b {
+        acc = (acc << 8) | (byte as u128);
+    }
+    Ok(acc)
+}
+
+fn decode_evm_rlp_items(
+    tx_type: u8,
+    items: &[RlpItem],
+    raw_tx_sha256: [u8; 32],
+) -> Result<DecodedIntent, String> {
+    // EIP-1559 (0x02) & EIP-7702 (0x04) RLP fields:
+    // [0]=chain_id, [1]=nonce, [2]=max_prio_fee, [3]=max_fee, [4]=gas_limit, [5]=to, [6]=value, [7]=data, [8]=access_list, [9]=auth_list (0x04)
+    let to_bytes = match &items[5] {
+        RlpItem::Bytes(b) if b.len() == 20 => {
+            let mut arr = [0u8; 20];
+            arr.copy_from_slice(b);
+            arr
+        }
+        _ => return Err("RLP `to` field must be 20 bytes".to_string()),
+    };
+    let value = match &items[6] {
+        RlpItem::Bytes(b) => rlp_bytes_to_u128(b)?,
+        _ => return Err("RLP `value` field must be bytes".to_string()),
+    };
+    let calldata = match &items[7] {
+        RlpItem::Bytes(b) => b.as_slice(),
+        _ => return Err("RLP `data` field must be bytes".to_string()),
+    };
+
+    if tx_type == 0x04 {
+        // EIP-7702 SetCode transaction: inspect authorization_list at index 9
+        if items.len() < 10 {
+            return Err("EIP-7702 RLP transaction missing authorization_list".to_string());
+        }
+        let (auth_chain_id, delegate_code_address) = match &items[9] {
+            RlpItem::List(tuples) if !tuples.is_empty() => match &tuples[0] {
+                RlpItem::List(fields) if fields.len() >= 2 => {
+                    let cid = match &fields[0] {
+                        RlpItem::Bytes(b) => rlp_bytes_to_u128(b)? as u64,
+                        _ => 0,
+                    };
+                    let addr = match &fields[1] {
+                        RlpItem::Bytes(b) if b.len() == 20 => {
+                            let mut a = [0u8; 20];
+                            a.copy_from_slice(b);
+                            a
+                        }
+                        _ => return Err("Invalid 20-byte delegate address in EIP-7702 tuple".to_string()),
+                    };
+                    (cid, addr)
+                }
+                _ => return Err("Malformed EIP-7702 authorization tuple".to_string()),
+            },
+            _ => return Err("Empty EIP-7702 authorization_list".to_string()),
+        };
+
+        let cross_chain_note = if auth_chain_id == 0 {
+            " [CRITICAL: chain_id=0 universal cross-chain replay authorization!]"
+        } else {
+            ""
+        };
+        return Ok(DecodedIntent {
+            chain: ChainId::Ethereum,
+            op_kind: OperationKind::Eip7702SetCodeDelegation {
+                auth_chain_id,
+                delegate_code_address,
+            },
+            recipient: delegate_code_address,
+            amount: value,
+            risk: RiskLevel::Forbidden,
+            summary: format!(
+                "FORBIDDEN EIP-7702 RLP SetCode Delegation to {:02x?}{} (Binance Oct-2026 vector)",
+                &delegate_code_address[0..4],
+                cross_chain_note
+            ),
+            raw_tx_sha256,
+        });
+    }
+
+    if calldata.is_empty() {
+        return Ok(DecodedIntent {
+            chain: ChainId::Ethereum,
+            op_kind: OperationKind::NativeTransfer,
+            recipient: to_bytes,
+            amount: value,
+            risk: RiskLevel::Normal,
+            summary: format!(
+                "EVM RLP Native Transfer of {} wei to {:02x?}",
+                value,
+                &to_bytes[0..4]
+            ),
+            raw_tx_sha256,
+        });
+    }
+
+    // Decode ABI selector on RLP calldata
+    let mut synthetic = Vec::with_capacity(37 + calldata.len());
+    synthetic.push(0x02);
+    synthetic.extend_from_slice(&to_bytes);
+    synthetic.extend_from_slice(&value.to_be_bytes());
+    synthetic.extend_from_slice(calldata);
+    decode_evm_frame(&synthetic, raw_tx_sha256)
+}
+
+/// Parses a hex string (`"0x04..."` or `"04..."`) into raw bytes.
+pub fn parse_hex(hex_str: &str) -> Result<Vec<u8>, String> {
+    let clean = hex_str.trim().strip_prefix("0x").unwrap_or(hex_str.trim());
+    if clean.len() % 2 != 0 {
+        return Err("Hex string must have an even number of characters".to_string());
+    }
+    let mut out = Vec::with_capacity(clean.len() / 2);
+    let bytes = clean.as_bytes();
+    for i in (0..bytes.len()).step_by(2) {
+        let hi = hex_nibble(bytes[i])?;
+        let lo = hex_nibble(bytes[i + 1])?;
+        out.push((hi << 4) | lo);
+    }
+    Ok(out)
+}
+
+fn hex_nibble(b: u8) -> Result<u8, String> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err(format!("Invalid hex character '{}'", b as char)),
+    }
+}
+
+/// Audits a Safe{Wallet} EIP-712 transaction JSON (`{"to":"0x...","value":0,"operation":1,"data":"0x..."}`).
+/// Detects the exact Bybit Feb-2025 `operation == 1` (`DELEGATECALL`) vector and inner calldata mismatches.
+pub fn audit_safe_tx_json(json_str: &str) -> Result<DecodedIntent, String> {
+    let to_hex = extract_json_string_field(json_str, "to")
+        .ok_or_else(|| "SafeTx JSON missing '\"to\"' address field".to_string())?;
+    let to_bytes_vec = parse_hex(&to_hex)?;
+    if to_bytes_vec.len() != 20 {
+        return Err("SafeTx `to` address must be 20 bytes (40 hex chars)".to_string());
+    }
+    let mut to_addr = [0u8; 20];
+    to_addr.copy_from_slice(&to_bytes_vec);
+
+    let operation = extract_json_u64_field(json_str, "operation").unwrap_or(0) as u8;
+    let value = extract_json_u64_field(json_str, "value").unwrap_or(0) as u128;
+
+    let raw_tx_sha256 = sha256(json_str.as_bytes());
+    let (risk, summary) = if operation == 1 {
+        (
+            RiskLevel::Forbidden,
+            format!(
+                "FORBIDDEN Safe{{Wallet}} EIP-712 JSON with operation=1 (DELEGATECALL) to {:02x?} (Bybit Feb-2025 vector)",
+                &to_addr[0..4]
+            ),
+        )
+    } else {
+        (
+            RiskLevel::Normal,
+            format!(
+                "Safe{{Wallet}} EIP-712 JSON CALL (operation=0) of {} wei to {:02x?}",
+                value,
+                &to_addr[0..4]
+            ),
+        )
+    };
+
+    Ok(DecodedIntent {
+        chain: ChainId::Ethereum,
+        op_kind: OperationKind::SafeExecTransaction { operation },
+        recipient: to_addr,
+        amount: value,
+        risk,
+        summary,
+        raw_tx_sha256,
+    })
+}
+
+fn extract_json_string_field(json: &str, key: &str) -> Option<String> {
+    let pattern = format!("\"{}\"", key);
+    let idx = json.find(&pattern)?;
+    let rest = &json[idx + pattern.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start();
+    if !after_colon.starts_with('"') {
+        return None;
+    }
+    let inner = &after_colon[1..];
+    let end_q = inner.find('"')?;
+    Some(inner[..end_q].to_string())
+}
+
+fn extract_json_u64_field(json: &str, key: &str) -> Option<u64> {
+    let pattern = format!("\"{}\"", key);
+    let idx = json.find(&pattern)?;
+    let rest = &json[idx + pattern.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start().trim_start_matches('"');
+    let digits: String = after_colon
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse::<u64>().ok()
 }
 
 #[cfg(test)]
@@ -418,5 +792,18 @@ mod tests {
         let raw = builders::build_bitcoin_psbt([0x22; 20], 10_000, 5_000);
         let intent = decode_transaction(ChainId::Bitcoin, &raw, None).unwrap();
         assert_eq!(intent.risk, RiskLevel::Forbidden);
+    }
+
+    #[test]
+    fn test_real_rlp_eip7702_and_safe_json_auditor() {
+        let rlp_tx = builders::build_real_rlp_eip7702_tx(1, [0xAA; 20], 0, 0, [0xDE; 20]);
+        let intent = decode_transaction(ChainId::Ethereum, &rlp_tx, None).unwrap();
+        assert_eq!(intent.risk, RiskLevel::Forbidden);
+        assert!(intent.summary.contains("EIP-7702 RLP SetCode Delegation"));
+
+        let safe_json = r#"{"to":"0xdededededededededededededededededededede","value":0,"operation":1,"data":"0x"}"#;
+        let safe_intent = audit_safe_tx_json(safe_json).unwrap();
+        assert_eq!(safe_intent.risk, RiskLevel::Forbidden);
+        assert!(safe_intent.summary.contains("DELEGATECALL"));
     }
 }

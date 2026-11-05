@@ -27,6 +27,8 @@ impl Default for GuardSection {
 pub struct DefaultsSection {
     pub unknown_tool_mutating: bool,
     pub unknown_tool_taint_mask: u32,
+    pub deny_paths: Vec<String>,
+    pub safe_write_paths: Vec<String>,
 }
 
 impl Default for DefaultsSection {
@@ -34,6 +36,8 @@ impl Default for DefaultsSection {
         Self {
             unknown_tool_mutating: true,
             unknown_tool_taint_mask: TaintMask::TOOL_OUTPUT,
+            deny_paths: Vec::new(),
+            safe_write_paths: Vec::new(),
         }
     }
 }
@@ -169,6 +173,12 @@ impl Policy {
                     "unknown_tool_taint" | "unknown_tool_taints" => {
                         let (mask, _) = parse_taint_array(val, line_no)?;
                         policy.defaults.unknown_tool_taint_mask = mask;
+                    }
+                    "deny_paths" => {
+                        policy.defaults.deny_paths = parse_string_array(val, line_no)?;
+                    }
+                    "safe_write_paths" => {
+                        policy.defaults.safe_write_paths = parse_string_array(val, line_no)?;
                     }
                     other => {
                         return Err(format!(
@@ -306,6 +316,29 @@ fn parse_taint_array(val: &str, line_no: usize) -> Result<(u32, Vec<String>), St
         names.push(s);
     }
     Ok((mask, names))
+}
+
+fn parse_string_array(val: &str, line_no: usize) -> Result<Vec<String>, String> {
+    let v = val.trim();
+    if !v.starts_with('[') || !v.ends_with(']') {
+        return Err(format!(
+            "Line {}: Expected array of strings, got '{}'",
+            line_no, v
+        ));
+    }
+    let inner = v[1..v.len() - 1].trim();
+    if inner.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for item in inner.split(',') {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        out.push(parse_toml_string(trimmed, line_no)?);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
