@@ -20,6 +20,12 @@ ledger_path = "genos-ledger.jsonl"
 unknown_tool_mutating = true
 unknown_tool_taints = ["TOOL_OUTPUT"]
 
+# Paths that are blocked/held even in a CLEAN session (protects secrets & SSH keys).
+deny_paths = [".env", ".ssh/", "id_rsa", ".git/hooks"]
+
+# Scratch paths where a tainted session can write draft notes without triggering Escrow alert fatigue.
+safe_write_paths = ["scratch/", "tmp/"]
+
 # ---------------------------------------------------------------------------
 # Tool Rules
 # ---------------------------------------------------------------------------

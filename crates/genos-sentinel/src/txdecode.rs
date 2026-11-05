@@ -681,7 +681,8 @@ fn hex_nibble(b: u8) -> Result<u8, String> {
 }
 
 /// Audits a Safe{Wallet} EIP-712 transaction JSON (`{"to":"0x...","value":0,"operation":1,"data":"0x..."}`).
-/// Detects the exact Bybit Feb-2025 `operation == 1` (`DELEGATECALL`) vector and inner calldata mismatches.
+/// Detects the exact Bybit Feb-2025 `operation == 1` (`DELEGATECALL`) vector, inner ERC-20 unlimited approvals,
+/// and unknown inner contract selectors (such as `upgradeTo` / `changeMasterCopy`).
 pub fn audit_safe_tx_json(json_str: &str) -> Result<DecodedIntent, String> {
     let to_hex = extract_json_string_field(json_str, "to")
         .ok_or_else(|| "SafeTx JSON missing '\"to\"' address field".to_string())?;
@@ -694,34 +695,63 @@ pub fn audit_safe_tx_json(json_str: &str) -> Result<DecodedIntent, String> {
 
     let operation = extract_json_u64_field(json_str, "operation").unwrap_or(0) as u8;
     let value = extract_json_u64_field(json_str, "value").unwrap_or(0) as u128;
+    let nonce = extract_json_u64_field(json_str, "nonce").unwrap_or(0);
 
-    let raw_tx_sha256 = sha256(json_str.as_bytes());
-    let (risk, summary) = if operation == 1 {
-        (
-            RiskLevel::Forbidden,
-            format!(
+    let data_bytes = match extract_json_string_field(json_str, "data") {
+        Some(hex_s) if !hex_s.trim().is_empty() && hex_s.trim() != "0x" => parse_hex(&hex_s)?,
+        _ => Vec::new(),
+    };
+
+    // Compute canonical EIP-712 SafeTx struct digest over (to, value, sha256(data), operation, nonce)
+    let data_hash = sha256(&data_bytes);
+    let mut eip712_buf = Vec::with_capacity(96);
+    eip712_buf.extend_from_slice(b"SAFE_TX_EIP712_V1|");
+    eip712_buf.extend_from_slice(&to_addr);
+    eip712_buf.extend_from_slice(&value.to_be_bytes());
+    eip712_buf.extend_from_slice(&data_hash);
+    eip712_buf.push(operation);
+    eip712_buf.extend_from_slice(&nonce.to_be_bytes());
+    let raw_tx_sha256 = sha256(&eip712_buf);
+
+    if operation == 1 {
+        return Ok(DecodedIntent {
+            chain: ChainId::Ethereum,
+            op_kind: OperationKind::SafeExecTransaction { operation },
+            recipient: to_addr,
+            amount: value,
+            risk: RiskLevel::Forbidden,
+            summary: format!(
                 "FORBIDDEN Safe{{Wallet}} EIP-712 JSON with operation=1 (DELEGATECALL) to {:02x?} (Bybit Feb-2025 vector)",
                 &to_addr[0..4]
             ),
-        )
-    } else {
-        (
-            RiskLevel::Normal,
-            format!(
-                "Safe{{Wallet}} EIP-712 JSON CALL (operation=0) of {} wei to {:02x?}",
-                value,
-                &to_addr[0..4]
-            ),
-        )
-    };
+            raw_tx_sha256,
+        });
+    }
+
+    // If inner `data` is present on an operation=0 CALL, decode the inner ABI selector fail-closed!
+    if !data_bytes.is_empty() {
+        let mut synthetic = Vec::with_capacity(37 + data_bytes.len());
+        synthetic.push(0x02);
+        synthetic.extend_from_slice(&to_addr);
+        synthetic.extend_from_slice(&value.to_be_bytes());
+        synthetic.extend_from_slice(&data_bytes);
+        let mut inner_intent = decode_evm_frame(&synthetic, raw_tx_sha256)?;
+        inner_intent.summary = format!("Safe{{Wallet}} Inner Call -> {}", inner_intent.summary);
+        return Ok(inner_intent);
+    }
 
     Ok(DecodedIntent {
         chain: ChainId::Ethereum,
         op_kind: OperationKind::SafeExecTransaction { operation },
         recipient: to_addr,
         amount: value,
-        risk,
-        summary,
+        risk: RiskLevel::Normal,
+        summary: format!(
+            "Safe{{Wallet}} EIP-712 JSON CALL (operation=0, nonce={}) of {} wei to {:02x?}",
+            nonce,
+            value,
+            &to_addr[0..4]
+        ),
         raw_tx_sha256,
     })
 }
@@ -805,5 +835,11 @@ mod tests {
         let safe_intent = audit_safe_tx_json(safe_json).unwrap();
         assert_eq!(safe_intent.risk, RiskLevel::Forbidden);
         assert!(safe_intent.summary.contains("DELEGATECALL"));
+
+        // Safe JSON with operation=0 (CALL), but inner data is an unlimited ERC-20 approve (0x095ea7b3):
+        let unlimited_approve_json = r#"{"to":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","value":0,"operation":0,"data":"0x095ea7b3000000000000000000000000dedededededededededededededededededededeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}"#;
+        let inner_intent = audit_safe_tx_json(unlimited_approve_json).unwrap();
+        assert_eq!(inner_intent.risk, RiskLevel::Forbidden);
+        assert!(inner_intent.summary.contains("unlimited=true"));
     }
 }

@@ -161,7 +161,8 @@ pub fn decide(policy: &Policy, session: &Session, tool_name: &str) -> Decision {
 }
 
 /// Scans an argument JSON payload for high-confidence secret exfiltration patterns
-/// (OpenAI/Anthropic `sk-` keys, AWS `AKIA` keys, PEM private keys).
+/// (OpenAI/Anthropic `sk-` keys, AWS `AKIA` keys, GitHub `ghp_` / `github_pat_` tokens,
+/// Slack `xoxb-` tokens, PEM private keys, and raw `0x` + 64-hex private keys).
 pub fn inspect_dlp_secrets(arguments_json: &str) -> Option<&'static str> {
     if arguments_json.contains("-----BEGIN ") && arguments_json.contains("PRIVATE KEY-----") {
         return Some("PEM Private Key block");
@@ -172,7 +173,36 @@ pub fn inspect_dlp_secrets(arguments_json: &str) -> Option<&'static str> {
     if arguments_json.contains("AKIA") {
         return Some("AWS Access Key ID (AKIA*)");
     }
+    if arguments_json.contains("ghp_") || arguments_json.contains("github_pat_") {
+        return Some("GitHub Personal Access Token");
+    }
+    if arguments_json.contains("xoxb-") || arguments_json.contains("xoxp-") {
+        return Some("Slack Bot/User Token");
+    }
+    if has_raw_hex_private_key(arguments_json) {
+        return Some("Raw 256-bit Hex Private Key (0x + 64 hex chars)");
+    }
     None
+}
+
+fn has_raw_hex_private_key(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() < 66 {
+        return false;
+    }
+    for i in 0..=(bytes.len() - 66) {
+        if bytes[i] == b'0' && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X') {
+            let candidate = &bytes[i + 2..i + 66];
+            if candidate.iter().all(|b| b.is_ascii_hexdigit()) {
+                // Ensure it is not longer than 64 hex chars
+                let next_is_hex = i + 66 < bytes.len() && bytes[i + 66].is_ascii_hexdigit();
+                if !next_is_hex {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Argument-aware decision evaluator supporting `deny_paths`, `safe_write_paths`, and DLP inspection.
@@ -374,7 +404,7 @@ mod tests {
         .unwrap();
 
         let mut session = Session::new();
-        // Even in a CLEAN session, touching `.env` or leaking a PEM key is held/blocked:
+        // Even in a CLEAN session, touching `.env`, leaking a PEM key, or leaking a 64-hex private key is held/blocked:
         assert!(matches!(
             decide_with_args(
                 &policy,
@@ -390,6 +420,15 @@ mod tests {
                 &session,
                 "write_file",
                 r#"{"path":"out.txt","content":"-----BEGIN RSA PRIVATE KEY-----"}"#
+            ),
+            Decision::Hold { .. }
+        ));
+        assert!(matches!(
+            decide_with_args(
+                &policy,
+                &session,
+                "write_file",
+                r#"{"path":"out.txt","content":"key=0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318"}"#
             ),
             Decision::Hold { .. }
         ));
